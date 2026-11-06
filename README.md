@@ -4,6 +4,10 @@ Spectral freeze / granular texture plugin. It captures a moment of sound and str
 
 VST3 · built with [JUCE](https://juce.com) · macOS
 
+![Spectra demo: a chord plays, freeze is clicked, and the pad holds while the input changes. Diffuse, shift and size are swept, then spread and shimmer on the settings page, and the pad is released.](docs/demo.gif)
+
+*In the demo, the faint line is the live input and the lavender line is the frozen pad. After freezing, the input switches to a different chord while the pad keeps holding the first one.*
+
 Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 
 ## Controls
@@ -39,3 +43,5 @@ Offline DSP checks cover dry passthrough, pitch stability, shift, stereo width, 
 cmake --build build --target SpectraTests
 ./build/SpectraTests_artefacts/Release/SpectraTests
 ```
+
+To re-render the demo GIF frames: `./build/SpectraTests_artefacts/Release/SpectraTests --demo-frames <dir>` (15 fps PNGs).

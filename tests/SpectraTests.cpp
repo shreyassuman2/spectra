@@ -173,11 +173,144 @@ static int snapshot (const char* path)
     return 0;
 }
 
+/** Scripted session for the README GIF: renders numbered PNG frames (15 fps) into `dir`. */
+static int demoFrames (const char* dir)
+{
+    using P = juce::Point<float>;
+    Rig rig (2);
+    juce::Random r (9);
+    long t = 0;
+
+    // Chord A before the freeze, chord B after, so you can see the pad hold while the input changes.
+    double now = 0.0;
+    auto gen = [&] (int, long n)
+    {
+        const bool chordB = now > 2.6;
+        const double env = 0.65 + 0.35 * std::sin ((double) n / sr * 2.3);
+        const float a = chordB ? (sine (293.7, n, 0.22f) + sine (370.0, n, 0.18f) + sine (440.0, n, 0.16f) + sine (2349.0, n, 0.02f))
+                               : (sine (196.0, n, 0.25f) + sine (246.9, n, 0.2f) + sine (293.7, n, 0.18f) + sine (1568.0, n, 0.03f));
+        return (float) env * a + (r.nextFloat() - 0.5f) * 0.01f;
+    };
+
+    std::unique_ptr<juce::AudioProcessorEditor> editor (rig.proc.createEditorAndMakeActive());
+    editor->setVisible (true);
+
+    std::function<juce::Button* (juce::Component&, const juce::String&)> findButton =
+        [&] (juce::Component& c, const juce::String& name) -> juce::Button*
+    {
+        for (auto* child : c.getChildren())
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == name) return b;
+            if (auto* found = findButton (*child, name)) return found;
+        }
+        return nullptr;
+    };
+
+    // Layout anchors (base coordinates, see Content::resized / SettingsPage::resized)
+    const P freezeAt { 712, 150 }, sizeAt { 652, 282 }, diffuseAt { 772, 282 }, shiftAt { 652, 396 };
+    const P settingsTab { 168, 91 }, spectrumTab { 88, 91 };
+    auto sliderX = [] (float v) { return 61.0f + v * 210.0f; };
+    const float spreadY = 253.0f, shimmerY = 403.0f;
+
+    struct Key { double time; P pos; bool down; };
+    std::vector<Key> path;
+    P cursor { 430, 300 };
+    bool cursorDown = false;
+
+    auto ease = [] (double x) { x = juce::jlimit (0.0, 1.0, x); return x * x * (3.0 - 2.0 * x); };
+    auto lerpP = [] (P a, P b, float k) { return a + (b - a) * k; };
+
+    juce::File out (juce::File::getCurrentWorkingDirectory().getChildFile (dir));
+    out.deleteRecursively();
+    out.createDirectory();
+
+    const double fps = 30.0, total = 14.2;
+    int frame = 0;
+    P moveFrom = cursor;
+    double moveStart = 0.0, moveEnd = 0.0;
+    P moveTo = cursor;
+    auto moveCursor = [&] (P to, double start, double duration) { moveFrom = cursor; moveTo = to; moveStart = start; moveEnd = start + duration; };
+    int lastEvent = -1;
+
+    for (int step = 0; now < total; ++step, now = step / fps)
+    {
+        // Timeline -----------------------------------------------------------
+        auto at = [&] (int id, double when) { if (now >= when && lastEvent < id) { lastEvent = id; return true; } return false; };
+
+        if (at (0, 1.2))  moveCursor (freezeAt, now, 0.7);
+        if (at (1, 2.0))  { setParam (rig.proc, "freeze", 1.0f); cursorDown = true; }
+        if (at (2, 2.2))  cursorDown = false;
+        if (at (3, 3.0))  moveCursor (diffuseAt, now, 0.6);
+        if (at (4, 4.9))  moveCursor (shiftAt, now, 0.6);
+        if (at (5, 6.6))  moveCursor (sizeAt, now, 0.5);
+        if (at (6, 7.7))  moveCursor (settingsTab, now, 0.6);
+        if (at (7, 8.3))  { if (auto* b = findButton (*editor, "settings")) b->triggerClick(); cursorDown = true; }
+        if (at (8, 8.45)) { cursorDown = false; moveCursor ({ sliderX (0.1f), spreadY }, now, 0.5); }
+        if (at (9, 9.9))  moveCursor ({ sliderX (0.0f), shimmerY }, now, 0.5);
+        if (at (10, 11.2)) moveCursor (spectrumTab, now, 0.5);
+        if (at (11, 11.7)) { if (auto* b = findButton (*editor, "spectrum")) b->triggerClick(); cursorDown = true; }
+        if (at (12, 11.85)) { cursorDown = false; moveCursor (freezeAt, now, 0.6); }
+        if (at (13, 12.6)) { setParam (rig.proc, "freeze", 0.0f); cursorDown = true; }
+        if (at (14, 12.8)) { cursorDown = false; moveCursor ({ 430, 300 }, now, 1.0); }
+
+        // Continuous gestures (cursor rides along with the value)
+        auto sweep = [&] (double t0, double t1) { return (float) ease ((now - t0) / (t1 - t0)); };
+        if (now >= 3.6 && now <= 4.7)  { const float k = sweep (3.6, 4.7);  setParam (rig.proc, "diffuse", 0.3f + 0.55f * k); cursor = diffuseAt.translated (0, -30.0f * k); cursorDown = true; }
+        if (now > 4.7 && now < 4.75) cursorDown = false;
+        if (now >= 5.5 && now <= 6.4)  { const float k = sweep (5.5, 6.4);  setParam (rig.proc, "shift", 7.0f * k); cursor = shiftAt.translated (0, -26.0f * k); cursorDown = true; }
+        if (now > 6.4 && now < 6.45) cursorDown = false;
+        if (now >= 7.1 && now <= 7.6)  { const float k = sweep (7.1, 7.6);  setParam (rig.proc, "size", 400.0f + 1100.0f * k); cursor = sizeAt.translated (0, -24.0f * k); cursorDown = true; }
+        if (now > 7.6 && now < 7.65) cursorDown = false;
+        if (now >= 9.0 && now <= 9.8)  { const float k = sweep (9.0, 9.8);  const float v = 0.1f + 0.5f * k; setParam (rig.proc, "spread", v); cursor = { sliderX (v), spreadY }; cursorDown = true; }
+        if (now > 9.8 && now < 9.85) cursorDown = false;
+        if (now >= 10.4 && now <= 11.1) { const float k = sweep (10.4, 11.1); const float v = 0.55f * k; setParam (rig.proc, "shimmer", v); cursor = { sliderX (v), shimmerY }; cursorDown = true; }
+        if (now > 11.1 && now < 11.15) cursorDown = false;
+
+        if (now >= moveStart && now <= moveEnd + 1.0 / fps && moveEnd > moveStart)
+            cursor = lerpP (moveFrom, moveTo, (float) ease ((now - moveStart) / (moveEnd - moveStart)));
+
+        // Audio + UI time ------------------------------------------------------
+        rig.run (1.0 / fps, gen, t);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (32);
+
+        if (step % 2 != 0) continue;   // 15 fps capture
+
+        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        {
+            juce::Graphics g (image);
+            juce::Path arrow;   // classic pointer
+            arrow.startNewSubPath (0, 0);
+            arrow.lineTo (0, 17); arrow.lineTo (4.5f, 13); arrow.lineTo (7.5f, 19.5f);
+            arrow.lineTo (10, 18.5f); arrow.lineTo (7, 12); arrow.lineTo (12.5f, 12);
+            arrow.closeSubPath();
+            arrow.applyTransform (juce::AffineTransform::scale (cursorDown ? 0.92f : 1.0f).translated (cursor));
+            if (cursorDown)
+            {
+                g.setColour (juce::Colour (0xfff0c27a).withAlpha (0.35f));
+                g.fillEllipse (juce::Rectangle<float> (26, 26).withCentre (cursor));
+            }
+            g.setColour (juce::Colours::white);
+            g.fillPath (arrow);
+            g.setColour (juce::Colours::black);
+            g.strokePath (arrow, juce::PathStrokeType (1.2f));
+        }
+        auto file = out.getChildFile (juce::String (frame++).paddedLeft ('0', 4) + ".png");
+        juce::FileOutputStream os (file);
+        juce::PNGImageFormat().writeImageToStream (image, os);
+    }
+
+    std::printf ("wrote %d frames to %s\n", frame, out.getFullPathName().toRawUTF8());
+    editor = nullptr;
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
     if (argc > 2 && juce::String (argv[1]) == "--snapshot")
         return snapshot (argv[2]);
+    if (argc > 2 && juce::String (argv[1]) == "--demo-frames")
+        return demoFrames (argv[2]);
 
     std::puts ("1. Unfrozen output is bit-identical to the input");
     {
