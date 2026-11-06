@@ -7,42 +7,19 @@
 namespace spectra::ui
 {
 
-/** Night palette: indigo chassis, dusty-violet cards, pale lavender knobs, one warm moon-gold accent. */
+/** Minimal night palette: one flat surface, one value colour, gold only for "frozen" and "touching". */
 namespace colours
 {
-    const juce::Colour backdrop     { 0xff07060b };
-    const juce::Colour chassisTop   { 0xff221c36 };
-    const juce::Colour chassisBot   { 0xff151124 };
-    const juce::Colour tray         { 0xff0f0c19 };
-    const juce::Colour glass        { 0xff0a0913 };
-    const juce::Colour tile         { 0xff16122b };
-    const juce::Colour tileHi       { 0xff201a3d };
-    const juce::Colour cardTop      { 0xff342c52 };
-    const juce::Colour cardBot      { 0xff28213f };
-    const juce::Colour emblem       { 0xff3e3566 };
-    const juce::Colour knob         { 0xffe7e1f7 };
-    const juce::Colour knobShade    { 0xffa49cc6 };
-    const juce::Colour lavender     { 0xffb69cff };
-    const juce::Colour cyan         { 0xff8fd3ff };
-    const juce::Colour gold         { 0xfff0c27a };
-    const juce::Colour text         { 0xffe4def7 };
-    const juce::Colour dim          { 0xff8a83a8 };
-    const juce::Colour faint        { 0xff4a4366 };
-    const juce::Colour line         { 0xff2c2547 };
-}
-
-namespace radius
-{
-    // Nested surfaces: outer = inner + padding.
-    constexpr float chassis = 22.0f;
-    constexpr float tray    = 18.0f;
-    constexpr float bezelPad = 10.0f;
-    constexpr float screen  = 14.0f;               // bezel
-    constexpr float glass   = screen - bezelPad;   // 4: glass inside the bezel
-    constexpr float card    = 12.0f;
-    constexpr float cardPad = 8.0f;
-    constexpr float emblem  = card - cardPad;      // 4
-    constexpr float control = 8.0f;
+    const juce::Colour background { 0xff100d1e };
+    const juce::Colour surface    { 0xff17132b };
+    const juce::Colour well       { 0xff0c0a18 };
+    const juce::Colour control    { 0xff1f1a38 };
+    const juce::Colour line       { 0xff2a2445 };
+    const juce::Colour lavender   { 0xffb69cff };
+    const juce::Colour gold       { 0xfff0c27a };
+    const juce::Colour text       { 0xffe6e1f5 };
+    const juce::Colour dim        { 0xff8b85a6 };
+    const juce::Colour faint      { 0xff4a4466 };
 }
 
 /** Smoothly approaches a target; retargets mid-flight (never a fixed timeline). */
@@ -50,12 +27,11 @@ struct Smoothed
 {
     float value = 0.0f, target = 0.0f;
     void snap (float v) { value = target = v; }
-    bool update (float dt, float tauUp, float tauDown)
+    bool update (float dt, float tau)
     {
-        const float tau = target > value ? tauUp : tauDown;
         const float before = value;
         value += (target - value) * (1.0f - std::exp (-dt / std::max (tau, 1.0e-4f)));
-        if (std::abs (target - value) < 0.001f) value = target;
+        if (std::abs (target - value) < 0.002f) value = target;
         return ! juce::exactlyEqual (value, before);
     }
 };
@@ -67,11 +43,10 @@ class LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
     LookAndFeel();
-
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos,
                            float startAngle, float endAngle, juce::Slider&) override;
-    void drawLinearSlider (juce::Graphics&, int, int, int, int, float, float, float,
-                           juce::Slider::SliderStyle, juce::Slider&) override {}   // tiles/bars paint themselves
+    void drawLinearSlider (juce::Graphics&, int x, int y, int w, int h, float pos, float minPos, float maxPos,
+                           juce::Slider::SliderStyle, juce::Slider&) override;
     juce::Font getPopupMenuFont() override;
     void drawPopupMenuBackground (juce::Graphics&, int w, int h) override;
     void drawTooltip (juce::Graphics&, const juce::String&, int w, int h) override;
@@ -79,23 +54,36 @@ public:
 };
 
 //==============================================================================
-/** A parameter-bound slider plus the attachment, with reset-on-double-click and Shift for fine control. */
+/** Slider + parameter attachment with double-click reset and Shift for fine control. */
 struct BoundSlider
 {
     BoundSlider (juce::AudioProcessorValueTreeState&, const juce::String& paramId,
-                 juce::Slider::SliderStyle, const juce::String& tooltip);
+                 juce::Slider::SliderStyle, const juce::String& tooltip, bool bipolar);
     mutable juce::Slider slider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     juce::String valueText() const { return slider.getTextFromValue (slider.getValue()); }
-    float normalised() const { return (float) slider.valueToProportionOfLength (slider.getValue()); }
 };
 
-/** Small pale knob with a label that turns into the value while you touch it. */
-class SmallKnob final : public juce::Component
+/** Simple flat knob with its name and value underneath. */
+class Knob final : public juce::Component
 {
 public:
-    SmallKnob (juce::AudioProcessorValueTreeState&, const juce::String& paramId,
-               const juce::String& label, const juce::String& tooltip, bool bipolar = false);
+    Knob (juce::AudioProcessorValueTreeState&, const juce::String& paramId, const juce::String& label,
+          const juce::String& tooltip, bool bipolar = false);
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    BoundSlider bound;
+    juce::String label;
+};
+
+/** Settings-page row: name and value on one line, a thin slider underneath. */
+class SliderRow final : public juce::Component
+{
+public:
+    SliderRow (juce::AudioProcessorValueTreeState&, const juce::String& paramId, const juce::String& label,
+               const juce::String& tooltip, bool bipolar = false);
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -105,135 +93,88 @@ private:
 };
 
 //==============================================================================
-/** Freeze button drawn as a moon inside the first card's emblem panel. */
-class MoonButton final : public juce::Button
+class FreezeButton final : public juce::Button
 {
 public:
-    MoonButton();
-    void tick (float dt, float energy, float time, bool reducedMotion);
+    FreezeButton();
+    void tick (float dt, bool reducedMotion);
     void paintButton (juce::Graphics&, bool highlighted, bool down) override;
 
 private:
-    Smoothed on, press, glow;
-    float time = 0.0f;
-    bool still = false;
+    Smoothed on, press;
+};
+
+/** Lowercase text button; gold on hover, optionally marked as selected. */
+class TextLink final : public juce::Button
+{
+public:
+    explicit TextLink (const juce::String& text) : juce::Button (text) {}
+    void setSelected (bool s) { if (s != selected) { selected = s; repaint(); } }
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+
+private:
+    bool selected = false;
 };
 
 //==============================================================================
-/** A standing module card: emblem panel, big knob, gold pill, small knobs, title, value slot. */
-class ModuleCard final : public juce::Component
+class SpectrumView final : public juce::Component
 {
 public:
-    enum class Emblem { moon, constellation, planet };
-
-    ModuleCard (juce::AudioProcessorValueTreeState&, Emblem, const juce::String& title,
-                const juce::String& bigParam, const juce::String& bigLabel, const juce::String& bigTip,
-                bool bigBipolar = false);
-
-    void addSmallKnob (std::unique_ptr<SmallKnob>);
-    MoonButton* getMoon() { return moon.get(); }
-    void tick (float dt, float energy, float time, bool reducedMotion, float emblemParam);
-
+    explicit SpectrumView (VisualState&);
+    void tick();   // ~30 Hz
     void paint (juce::Graphics&) override;
-    void resized() override;
 
 private:
-    juce::Rectangle<float> emblemArea() const;
-    void paintConstellation (juce::Graphics&, juce::Rectangle<float>) const;
-    void paintPlanet (juce::Graphics&, juce::Rectangle<float>) const;
-
-    Emblem emblem;
-    juce::String title, bigLabel;
-    BoundSlider big;
-    std::unique_ptr<MoonButton> moon;
-    std::vector<std::unique_ptr<SmallKnob>> smallKnobs;
-    float energy = 0.0f, time = 0.0f, emblemParam = 0.0f;
-    bool still = false;
-};
-
-//==============================================================================
-/** Screen tile: a glyph or big number that you drag vertically. */
-class Tile final : public juce::Component
-{
-public:
-    enum class Glyph { position, scatter, number, blur };
-    Tile (juce::AudioProcessorValueTreeState&, const juce::String& paramId, const juce::String& label,
-          const juce::String& tooltip, Glyph);
-    void paint (juce::Graphics&) override;
-    void resized() override { bound.slider.setBounds (getLocalBounds()); }
-
-private:
-    BoundSlider bound;
-    juce::String label;
-    Glyph glyph;
-};
-
-/** Row of ticks lit up to the value; drag horizontally. */
-class TickBar final : public juce::Component
-{
-public:
-    TickBar (juce::AudioProcessorValueTreeState&, const juce::String& paramId, const juce::String& label,
-             const juce::String& tooltip);
-    void paint (juce::Graphics&) override;
-    void resized() override { bound.slider.setBounds (getLocalBounds()); }
-
-private:
-    BoundSlider bound;
-    juce::String label;
-};
-
-//==============================================================================
-/** Spectrum (particles + curves) and the captured-slice strip, drawn on the glass. */
-class Display final : public juce::Component
-{
-public:
-    explicit Display (VisualState&);
-    void tick (bool reducedMotion);   // ~30 Hz
-    void paint (juce::Graphics&) override;
-    float getEnergy() const noexcept { return energy; }
-
-private:
-    struct Particle { float x, y, vx, vy, life, maxLife, size, hue; };
-
     juce::Rectangle<float> curvesArea() const;
     juce::Rectangle<float> stripArea() const;
-    void rebuildThumbnail();
-    void spawnParticle (juce::Rectangle<float> area);
     juce::Path makeCurve (const std::array<float, VisualState::numBands>&, juce::Rectangle<float>, bool closed) const;
+    void rebuildThumbnail();
 
     VisualState& vs;
     std::array<float, VisualState::numBands> input {}, pad {};
-    std::vector<Particle> particles;
-    juce::Random rng;
     juce::Image thumbImage;
     int lastThumbVersion = -1, thumbCols = 0;
-    float energy = 0.0f, centroid = 0.5f, regionStart = 0.0f, spawnAccumulator = 0.0f;
+    float regionStart = 0.0f;
     std::array<float, VisualState::numVoices> playheads {}, levels {};
-    bool frozen = false, showParticles = true;
+    bool frozen = false;
 };
 
-/** The glass screen: tiles on top, display in the middle, tick bars at the bottom. */
+class SettingsPage final : public juce::Component
+{
+public:
+    SettingsPage (SpectraProcessor&);
+    void resized() override;
+
+private:
+    std::vector<std::unique_ptr<SliderRow>> rows;
+    TextLink randomize { "randomize texture" };
+};
+
+/** The screen: two tabs ("spectrum", "settings") that cross-fade. */
 class Screen final : public juce::Component
 {
 public:
-    Screen (juce::AudioProcessorValueTreeState&, VisualState&);
+    explicit Screen (SpectraProcessor&);
     void paint (juce::Graphics&) override;
-    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
-    Display& getDisplay() { return display; }
+    void tick (float dt, bool reducedMotion);
 
 private:
-    std::vector<std::unique_ptr<Tile>> tiles;
-    std::unique_ptr<TickBar> attack, release;
-    Display display;
+    void showSettings (bool);
+
+    SpectrumView spectrum;
+    SettingsPage settings;
+    TextLink spectrumTab { "spectrum" }, settingsTab { "settings" };
+    Smoothed settingsAmount;
+    float spectrumAccumulator = 0.0f;
 };
 
 //==============================================================================
-/** Recessed name window with prev / next dots; click the name for the full list. */
-class PresetDisplay final : public juce::Component
+/** Preset name between two chevrons; click the name for the list. */
+class PresetNav final : public juce::Component
 {
 public:
-    explicit PresetDisplay (SpectraProcessor&);
+    explicit PresetNav (SpectraProcessor&);
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -242,40 +183,25 @@ public:
     void refresh();
 
 private:
-    struct DotButton final : public juce::Button
+    struct Chevron final : public juce::Button
     {
-        explicit DotButton (const juce::String& n) : juce::Button (n) {}
+        Chevron (const juce::String& n, bool leftFacing) : juce::Button (n), left (leftFacing) {}
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+        bool left;
     };
-
     void step (int delta);
     juce::Rectangle<int> nameArea() const;
 
     SpectraProcessor& proc;
-    DotButton prev { "Previous preset" }, next { "Next preset" };
+    Chevron prev { "Previous preset", true }, next { "Next preset", false };
     int shownProgram = -1;
-};
-
-/** Footer pill: outlined, mono text. */
-class PillButton final : public juce::Button
-{
-public:
-    explicit PillButton (const juce::String& text) : juce::Button (text) {}
-    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
-};
-
-class DiceButton final : public juce::Button
-{
-public:
-    DiceButton() : juce::Button ("Randomize") {}
-    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
 };
 
 //==============================================================================
 class Content final : public juce::Component
 {
 public:
-    static constexpr int baseWidth = 960, baseHeight = 540;
+    static constexpr int baseWidth = 860, baseHeight = 500;
 
     Content (SpectraProcessor&, std::function<void (float)> onScaleChosen);
     void paint (juce::Graphics&) override;
@@ -285,22 +211,19 @@ public:
 
 private:
     void showScaleMenu();
-    void paintGrille (juce::Graphics&, juce::Rectangle<float>, float glow) const;
 
     SpectraProcessor& spectraProcessor;
     std::function<void (float)> onScaleChosen;
 
-    PresetDisplay presetDisplay;
+    PresetNav presetNav;
     Screen screen;
-    std::unique_ptr<ModuleCard> freezeCard, hazeCard, orbitCard;
+    FreezeButton freeze;
+    std::vector<std::unique_ptr<Knob>> knobs;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> freezeAttachment;
-    DiceButton randomizeButton;
-    PillButton scaleButton { "100%" };
+    TextLink scaleButton { "100%" };
 
-    juce::Image grain;
-    juce::Rectangle<float> trayArea;
     bool reducedMotion = false;
-    float time = 0.0f, displayAccumulator = 0.0f, motionCheckAccumulator = 0.0f, grilleGlow = 0.0f;
+    float motionCheckAccumulator = 0.0f;
 };
 
 } // namespace spectra::ui
@@ -322,7 +245,7 @@ private:
     SpectraProcessor& spectraProcessor;
     spectra::ui::LookAndFeel lnf;
     spectra::ui::Content content;
-    juce::TooltipWindow tooltipWindow { this, 600 };
+    juce::TooltipWindow tooltipWindow { this, 700 };
     double lastTick = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SpectraEditor)

@@ -16,9 +16,9 @@ Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 | Envelope | **Attack** (10 ms–5 s), **Release** (10 ms–10 s) |
 | Output | **Mix** (how much the pad replaces the dry signal while frozen), **Level** |
 
-The UI is a night-themed hardware panel. The glass screen holds Scan, Spread, Absorb, Blur and Shimmer as drag tiles, and Attack and Release as tick bars. Three module cards hold the knobs: **Freeze** (the moon is the freeze button, with Size and Drift), **Haze** (Diffuse, Shift, Tone) and **Orbit** (Mix, Width, Level). Set the window size from the % pill in the footer (75–150%).
+The UI is deliberately minimal. A screen on the left shows the live spectrum and the captured slice. To its right are a large **freeze** button and four knobs: size, diffuse, shift and mix. The screen's **settings** tab holds the other eleven controls as simple sliders, plus *randomize texture*. Set the window size from the % menu at the top right (75–150%).
 
-Click the **moon** to capture the last moment of sound, and click it again to release. While unfrozen, audio passes through untouched.
+Click **freeze** to capture the last moment of sound, and click it again to release. While unfrozen, audio passes through untouched.
 
 ## Build
 

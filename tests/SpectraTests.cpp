@@ -154,7 +154,7 @@ static int snapshot (const char* path)
     {
         for (auto* child : c.getChildren())
         {
-            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == "Advanced") return b;
+            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == "settings") return b;
             if (auto* found = findButton (*child)) return found;
         }
         return nullptr;
@@ -167,7 +167,7 @@ static int snapshot (const char* path)
             rig.run (1.0 / 30.0, gen, t);
             juce::MessageManager::getInstance()->runDispatchLoopUntil (34);
         }
-        save ("-advanced");
+        save ("-settings");
     }
     editor = nullptr;
     return 0;
