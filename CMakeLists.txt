@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(Spectra VERSION 1.0.1)
+project(Spectra VERSION 1.0.2)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,7 +28,7 @@ juce_add_plugin(Spectra
     BUNDLE_ID                   "com.shreyas.spectra"
     PLUGIN_MANUFACTURER_CODE    Shry
     PLUGIN_CODE                 Spct
-    FORMATS                     VST3
+    FORMATS                     AU VST3
     PRODUCT_NAME                "Spectra"
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE

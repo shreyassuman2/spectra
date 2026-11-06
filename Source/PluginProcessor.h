@@ -33,6 +33,17 @@ public:
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    //==============================================================================
+    // User presets: one small XML file per preset in userPresetFolder(). Programs are the
+    // factory presets first, then the user presets sorted by name. Call these from the message thread.
+    static juce::File userPresetFolder();
+    void refreshUserPresets();
+    int  saveUserPreset (const juce::String& name);   // returns the new program index, or -1 on failure
+    bool deleteUserPreset (int programIndex);
+    juce::File getUserPresetFile (int programIndex) const;
+    int  getNumFactoryPresets() const noexcept;
+    bool isUserPreset (int programIndex) const noexcept { return programIndex >= getNumFactoryPresets(); }
+
     /** Rolls new random values for the texture parameters only. Call from the message thread. */
     void randomizeTexture();
 
@@ -53,7 +64,12 @@ private:
     juce::AudioBuffer<float> wetBuffer;
     std::vector<float> duckBuffer;
     juce::SmoothedValue<float> mixSmoothed, levelSmoothed;
-    int currentProgram = 0;
+    void applyPresetFile (const juce::File&);
+
+    struct UserPreset { juce::String name; juce::File file; };
+    std::vector<UserPreset> userPresets;
+    juce::CriticalSection userPresetLock;   // hosts may ask for program names from other threads
+    std::atomic<int> currentProgram { 0 };
     juce::Random random;
 
     struct ParamPointers

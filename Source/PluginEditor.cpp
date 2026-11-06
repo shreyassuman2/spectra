@@ -53,6 +53,15 @@ LookAndFeel::LookAndFeel()
     setColour (juce::TooltipWindow::backgroundColourId, colours::surface);
     setColour (juce::TooltipWindow::textColourId, colours::text);
     setColour (juce::TooltipWindow::outlineColourId, colours::line);
+    setColour (juce::TextEditor::backgroundColourId, colours::control);
+    setColour (juce::TextEditor::textColourId, colours::text);
+    setColour (juce::TextEditor::highlightColourId, colours::lavender.withAlpha (0.3f));
+    setColour (juce::TextEditor::highlightedTextColourId, colours::text);
+    setColour (juce::TextEditor::outlineColourId, colours::line);
+    setColour (juce::TextEditor::focusedOutlineColourId, colours::gold.withAlpha (0.7f));
+    setColour (juce::CaretComponent::caretColourId, colours::gold);
+    setColour (juce::ScrollBar::thumbColourId, colours::faint);
+    setColour (juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
 }
 
 void LookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos,
@@ -179,6 +188,19 @@ void LookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int 
     const auto box = glyphs.getBoundingBox (0, -1, true);
     glyphs.draw (g, juce::AffineTransform::translation (12.0f - box.getX(), ((float) h - box.getHeight()) * 0.5f - box.getY()));
     juce::ignoreUnused (w);
+}
+
+void LookAndFeel::fillTextEditorBackground (juce::Graphics& g, int w, int h, juce::TextEditor& editor)
+{
+    g.setColour (editor.findColour (juce::TextEditor::backgroundColourId));
+    g.fillRoundedRectangle (juce::Rectangle<int> (0, 0, w, h).toFloat(), 6.0f);
+}
+
+void LookAndFeel::drawTextEditorOutline (juce::Graphics& g, int w, int h, juce::TextEditor& editor)
+{
+    const bool focused = editor.hasKeyboardFocus (true) && ! editor.isReadOnly();
+    g.setColour (editor.findColour (focused ? juce::TextEditor::focusedOutlineColourId : juce::TextEditor::outlineColourId));
+    g.drawRoundedRectangle (juce::Rectangle<int> (0, 0, w, h).toFloat().reduced (0.5f), 6.0f, 1.0f);
 }
 
 //==============================================================================
@@ -454,63 +476,187 @@ void SpectrumView::paint (juce::Graphics& g)
 //==============================================================================
 PresetsPage::PresetsPage (SpectraProcessor& p) : proc (p)
 {
-    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    viewport.setViewedComponent (&list, false);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (6);
+    addAndMakeVisible (viewport);
+
+    nameEditor.setFont (mono (12.0f));
+    nameEditor.setIndents (10, 0);
+    nameEditor.setJustification (juce::Justification::centredLeft);
+    nameEditor.setTextToShowWhenEmpty ("name your preset", colours::faint);
+    nameEditor.setInputRestrictions (48);
+    nameEditor.onReturnKey = [this] { finishSave (true); };
+    nameEditor.onEscapeKey = [this] { finishSave (false); };
+    addChildComponent (nameEditor);
+
+    saveLink.setTooltip ("Save the current sound as one of your presets.");
+    saveLink.onClick    = [this] { beginSave(); };
+    confirmLink.onClick = [this] { finishSave (true); };
+    cancelLink.onClick  = [this] { finishSave (false); };
+    addAndMakeVisible (saveLink);
+    addChildComponent (confirmLink);
+    addChildComponent (cancelLink);
 }
 
-juce::Rectangle<int> PresetsPage::rowBounds (int index) const
+void PresetsPage::refresh()
 {
-    const int n = std::max (1, proc.getNumPrograms());
-    const int rowH = getHeight() / n;
-    return { 0, index * rowH, getWidth(), rowH };
-}
-
-int PresetsPage::rowAt (juce::Point<int> p) const
-{
-    for (int i = 0; i < proc.getNumPrograms(); ++i)
-        if (rowBounds (i).contains (p)) return i;
-    return -1;
-}
-
-void PresetsPage::setHovered (int index)
-{
-    if (index != hovered) { hovered = index; repaint(); }
-}
-
-void PresetsPage::mouseMove (const juce::MouseEvent& e) { setHovered (rowAt (e.getPosition())); }
-void PresetsPage::mouseExit (const juce::MouseEvent&)    { setHovered (-1); }
-
-void PresetsPage::mouseUp (const juce::MouseEvent& e)
-{
-    if (const int i = rowAt (e.getPosition()); i >= 0 && e.mouseWasClicked())
-    {
-        proc.setCurrentProgram (i);
-        tick();
-    }
+    proc.refreshUserPresets();
+    tick();
 }
 
 void PresetsPage::tick()
 {
-    if (shownProgram != proc.getCurrentProgram())
+    if (shownProgram != proc.getCurrentProgram() || shownCount != proc.getNumPrograms())
     {
         shownProgram = proc.getCurrentProgram();
-        repaint();
+        shownCount = proc.getNumPrograms();
+        updateLayout();
+        list.repaint();
     }
+}
+
+void PresetsPage::updateLayout()
+{
+    list.setSize (std::max (0, viewport.getWidth() - 12), list.layoutHeight());
+}
+
+void PresetsPage::resized()
+{
+    viewport.setBounds (getLocalBounds().withTrimmedBottom (barH));
+    updateLayout();
+
+    const int y = getHeight() - barH + 11;
+    saveLink.setBounds (9, y, 90, 22);
+    nameEditor.setBounds (0, y - 3, 240, 28);
+    confirmLink.setBounds (252, y, 44, 22);
+    cancelLink.setBounds (304, y, 60, 22);
 }
 
 void PresetsPage::paint (juce::Graphics& g)
 {
-    const int n = proc.getNumPrograms();
-    for (int i = 0; i < n; ++i)
+    g.setColour (colours::line.withAlpha (0.6f));
+    g.fillRect (0, getHeight() - barH, getWidth(), 1);
+}
+
+void PresetsPage::beginSave()
+{
+    const int current = proc.getCurrentProgram();
+    nameEditor.setText (proc.isUserPreset (current) ? proc.getProgramName (current) : juce::String(), false);
+    nameEditor.selectAll();
+    saveLink.setVisible (false);
+    nameEditor.setVisible (true);
+    confirmLink.setVisible (true);
+    cancelLink.setVisible (true);
+    nameEditor.grabKeyboardFocus();
+}
+
+void PresetsPage::finishSave (bool commit)
+{
+    if (commit)
+    {
+        if (nameEditor.getText().trim().isEmpty()) return;   // nothing to save yet; keep the box open
+        const int index = proc.saveUserPreset (nameEditor.getText());
+        if (index < 0) return;
+        tick();
+        viewport.setViewPosition (0, std::max (0, list.rowBounds (index).getBottom() - viewport.getHeight()));
+    }
+    nameEditor.setVisible (false);
+    confirmLink.setVisible (false);
+    cancelLink.setVisible (false);
+    saveLink.setVisible (true);
+}
+
+void PresetsPage::showUserPresetMenu (int program)
+{
+    juce::PopupMenu menu;
+    menu.setLookAndFeel (&getLookAndFeel());
+   #if JUCE_MAC
+    const juce::String reveal { "show in finder" };
+   #else
+    const juce::String reveal { "show in explorer" };
+   #endif
+    menu.addItem (1, "delete");
+    menu.addItem (2, reveal);
+    auto options = juce::PopupMenu::Options().withTargetScreenArea (juce::Rectangle<int> (juce::Desktop::getMousePosition(), {}).expanded (1));
+    if (auto* top = findParentComponentOfClass<Content>())
+        options = options.withParentComponent (top);
+    menu.showMenuAsync (options, [this, program] (int result)
+    {
+        if (result == 1)
+        {
+            proc.deleteUserPreset (program);
+            tick();
+        }
+        else if (result == 2)
+        {
+            proc.getUserPresetFile (program).revealToUser();
+        }
+    });
+}
+
+//==============================================================================
+int PresetsPage::List::layoutHeight() const
+{
+    const int users = owner.proc.getNumPrograms() - owner.proc.getNumFactoryPresets();
+    return owner.proc.getNumFactoryPresets() * rowH + headerH + std::max (1, users) * rowH;
+}
+
+juce::Rectangle<int> PresetsPage::List::rowBounds (int program) const
+{
+    const int factory = owner.proc.getNumFactoryPresets();
+    const int y = program < factory ? program * rowH : factory * rowH + headerH + (program - factory) * rowH;
+    return { 0, y, getWidth(), rowH };
+}
+
+int PresetsPage::List::rowAt (juce::Point<int> p) const
+{
+    for (int i = 0; i < owner.proc.getNumPrograms(); ++i)
+        if (rowBounds (i).contains (p)) return i;
+    return -1;
+}
+
+void PresetsPage::List::mouseMove (const juce::MouseEvent& e)
+{
+    if (const int i = rowAt (e.getPosition()); i != hovered) { hovered = i; repaint(); }
+}
+
+void PresetsPage::List::mouseExit (const juce::MouseEvent&)
+{
+    if (hovered != -1) { hovered = -1; repaint(); }
+}
+
+void PresetsPage::List::mouseUp (const juce::MouseEvent& e)
+{
+    const int i = rowAt (e.getPosition());
+    if (i < 0 || ! e.mouseWasClicked()) return;
+
+    if (e.mods.isPopupMenu())
+    {
+        if (owner.proc.isUserPreset (i)) owner.showUserPresetMenu (i);
+        return;
+    }
+    owner.proc.setCurrentProgram (i);
+    owner.tick();
+}
+
+void PresetsPage::List::paint (juce::Graphics& g)
+{
+    auto& processor = owner.proc;
+    const int total = processor.getNumPrograms(), factory = processor.getNumFactoryPresets();
+
+    for (int i = 0; i < total; ++i)
     {
         const auto row = rowBounds (i);
-        const bool current = i == proc.getCurrentProgram();
+        const bool current = i == processor.getCurrentProgram(), user = i >= factory;
+        const bool lastInGroup = i == factory - 1 || i == total - 1;
 
         if (i == hovered)
         {
             g.setColour (colours::control);
             g.fillRoundedRectangle (row.toFloat().reduced (0.0f, 2.0f), 8.0f);
         }
-        else if (i < n - 1 && i + 1 != hovered)
+        else if (! lastInGroup && i + 1 != hovered)
         {
             g.setColour (colours::line.withAlpha (0.6f));
             g.fillRect (row.getX() + 12, row.getBottom() - 1, row.getWidth() - 24, 1);
@@ -524,16 +670,35 @@ void PresetsPage::paint (juce::Graphics& g)
 
         g.setFont (light (15.0f, 0.04f));
         g.setColour (current ? colours::gold : i == hovered ? colours::text : colours::text.withAlpha (0.85f));
-        g.drawText (proc.getProgramName (i).toLowerCase(), row.withTrimmedLeft (28).withWidth (150),
+        g.drawText (processor.getProgramName (i).toLowerCase(), row.withTrimmedLeft (28).withWidth (user ? 300 : 150),
                     juce::Justification::centredLeft, true);
 
-        if ((size_t) i < factoryPresets.size())
+        g.setFont (mono (10.5f));
+        if (! user && (size_t) i < factoryPresets.size())
         {
-            g.setFont (mono (10.5f));
             g.setColour (i == hovered ? colours::text.withAlpha (0.75f) : colours::dim);
             g.drawText (factoryPresets[(size_t) i].description, row.withTrimmedLeft (180).withTrimmedRight (14),
                         juce::Justification::centredLeft, true);
         }
+        else if (user && i == hovered)
+        {
+            g.setColour (colours::faint);
+            g.drawText ("right-click to delete", row.withTrimmedRight (14), juce::Justification::centredRight, false);
+        }
+    }
+
+    // "your presets" header, and a hint while there are none
+    const int headerY = factory * rowH;
+    g.setFont (mono (10.0f, 0.08f));
+    g.setColour (colours::dim);
+    g.drawText ("your presets", 12, headerY + 10, 200, 16, juce::Justification::centredLeft, false);
+
+    if (total == factory)
+    {
+        g.setFont (mono (10.5f));
+        g.setColour (colours::faint);
+        g.drawText ("Use \"save as...\" below to keep the current sound here.",
+                    juce::Rectangle<int> (28, headerY + headerH, getWidth() - 40, rowH), juce::Justification::centredLeft, true);
     }
 }
 
@@ -593,6 +758,7 @@ Screen::Screen (SpectraProcessor& proc) : spectrum (proc.getVisualState()), sett
 void Screen::showPage (int newPage)
 {
     page = newPage;
+    if (page == presetsPage) presets.refresh();
     for (int i = 0; i < 3; ++i)
     {
         const bool on = i == page;
@@ -695,7 +861,7 @@ void PresetNav::paint (juce::Graphics& g)
     const bool hover = isMouseOver (false);
     g.setFont (light (16.0f, 0.04f));
     g.setColour (hover ? colours::text : colours::text.withAlpha (0.85f));
-    g.drawText (proc.getProgramName (proc.getCurrentProgram()).toLowerCase(), nameArea(), juce::Justification::centred, false);
+    g.drawText (proc.getProgramName (proc.getCurrentProgram()).toLowerCase(), nameArea(), juce::Justification::centred, true);
 }
 
 //==============================================================================

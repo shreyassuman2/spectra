@@ -52,17 +52,27 @@ jobs:
     needs: [mac, windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Write release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '/^## /{ on = ($2 == v); next } on' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "No section for $version in CHANGELOG.md" >&2; exit 1; fi
+          cat >> notes.md <<'NOTES'
+
+          ## Download
+
+          - **Mac** (Apple Silicon and Intel, macOS 11+): the `-mac.pkg` file. Installs the VST3 and the Audio Unit.
+          - **Windows** (64-bit): the `-windows-setup.exe` file. The `.zip` is the bare plugin, for manual installs.
+
+          Spectra isn't signed with a paid Apple or Microsoft certificate yet, so your computer will warn you the first time. See [how to install](https://github.com/shreyassuman2/spectra#install) for the one-time steps.
+          NOTES
+          cat notes.md
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          body: |
-            ## Download
-
-            - **Mac** (Apple Silicon and Intel, macOS 11+): the `-mac.pkg` file
-            - **Windows** (64-bit): the `-windows-setup.exe` file. The `.zip` is the bare plugin, for manual installs.
-
-            Spectra isn't signed with a paid Apple or Microsoft certificate yet, so your computer will warn you the first time. See [how to install](https://github.com/shreyassuman2/spectra#install) for the one-time steps.
+          body_path: notes.md

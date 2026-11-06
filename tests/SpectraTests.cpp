@@ -175,6 +175,27 @@ static int snapshot (const char* path)
             save (juce::String ("-") + tab);
         }
 
+    // Presets page with two user presets and the save box open
+    rig.proc.saveUserPreset ("Late Night Wash");
+    rig.proc.saveUserPreset ("Bell Drone");
+    if (auto* b = findButton (*editor, "presets")) b->triggerClick();
+    if (auto* b = findButton (*editor, "save as...")) b->triggerClick();
+    settle();
+    save ("-presets-saving");
+    std::function<juce::Viewport* (juce::Component&)> findViewport = [&] (juce::Component& c) -> juce::Viewport*
+    {
+        for (auto* child : c.getChildren())
+        {
+            if (auto* v = dynamic_cast<juce::Viewport*> (child)) return v;
+            if (auto* found = findViewport (*child)) return found;
+        }
+        return nullptr;
+    };
+    if (auto* b = findButton (*editor, "cancel")) b->triggerClick();
+    if (auto* v = findViewport (*editor)) v->setViewPosition (0, 10000);
+    settle();
+    save ("-presets-user");
+
     // Tooltips for the freeze button and the four knobs, stacked into one image
     {
         auto& lnf = editor->getLookAndFeel();
@@ -351,6 +372,11 @@ static int demoFrames (const char* dir)
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
+
+    // Keep the tests away from the real user preset folder.
+    const juce::TemporaryFile presetDir;
+    setenv ("SPECTRA_PRESET_DIR", presetDir.getFile().getFullPathName().toRawUTF8(), 1);
+    struct Cleanup { juce::File dir; ~Cleanup() { dir.deleteRecursively(); } } cleanup { presetDir.getFile() };
     if (argc > 2 && juce::String (argv[1]) == "--snapshot")
         return snapshot (argv[2]);
     if (argc > 2 && juce::String (argv[1]) == "--demo-frames")
@@ -469,6 +495,40 @@ int main (int argc, char** argv)
         const double elapsed = std::chrono::duration<double> (std::chrono::steady_clock::now() - start).count();
         const double percent = 100.0 * elapsed / seconds;
         check (percent < 3.0, "CPU % of one core (target < 3%)", percent);
+    }
+
+    std::puts ("7. User presets save, reload and delete");
+    {
+        SpectraProcessor proc;
+        const int factory = proc.getNumFactoryPresets();
+        check (proc.getNumPrograms() == factory, "starts with factory presets only", proc.getNumPrograms());
+
+        setParam (proc, "diffuse", 0.83f);
+        setParam (proc, "shift", -7.0f);
+        setParam (proc, "freeze", 1.0f);
+        const int saved = proc.saveUserPreset ("  My Pad/1  ");
+        check (saved == factory && proc.getCurrentProgram() == saved, "saved preset becomes current", saved);
+        check (proc.getProgramName (saved) == "My Pad/1", "name kept (trimmed)", 0);
+        check (SpectraProcessor::userPresetFolder().getNumberOfChildFiles (juce::File::findFiles) == 1, "one file written", 0);
+
+        proc.setCurrentProgram (0);                               // load Init, then the user preset again
+        setParam (proc, "freeze", 0.0f);
+        proc.setCurrentProgram (saved);
+        auto value = [&] (const char* id) { auto* prm = proc.apvts.getParameter (id); return prm->convertFrom0to1 (prm->getValue()); };
+        check (std::abs (value ("diffuse") - 0.83f) < 0.001f, "diffuse restored", value ("diffuse"));
+        check (std::abs (value ("shift") + 7.0f) < 0.01f, "shift restored", value ("shift"));
+        check (value ("freeze") < 0.5f, "loading a preset never touches freeze", value ("freeze"));
+
+        SpectraProcessor other;                                   // a second instance finds it on disk
+        check (other.getNumPrograms() == factory + 1, "new instance sees the saved preset", other.getNumPrograms());
+
+        juce::MemoryBlock state;                                  // project reload keeps the selection by name
+        proc.getStateInformation (state);
+        other.setStateInformation (state.getData(), (int) state.getSize());
+        check (other.getCurrentProgram() == saved, "project reload restores the user preset", other.getCurrentProgram());
+
+        check (proc.deleteUserPreset (saved) && proc.getNumPrograms() == factory, "delete removes it", proc.getNumPrograms());
+        check (proc.saveUserPreset ("   ") == -1, "blank name refused", 0);
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASSED" : "FAILURES", failures, failures == 1 ? "" : "s");

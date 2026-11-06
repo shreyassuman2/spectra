@@ -89,6 +89,8 @@ SpectraProcessor::SpectraProcessor()
     p.release = get ("release");
     p.mix     = get ("mix");
     p.level   = get ("level");
+
+    refreshUserPresets();
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout SpectraProcessor::createLayout()
@@ -227,13 +229,118 @@ void SpectraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 }
 
 //==============================================================================
-int SpectraProcessor::getNumPrograms() { return (int) spectra::factoryPresets.size(); }
+int SpectraProcessor::getNumFactoryPresets() const noexcept { return (int) spectra::factoryPresets.size(); }
+
+int SpectraProcessor::getNumPrograms()
+{
+    const juce::ScopedLock sl (userPresetLock);
+    return getNumFactoryPresets() + (int) userPresets.size();
+}
 
 const juce::String SpectraProcessor::getProgramName (int index)
 {
-    if (juce::isPositiveAndBelow (index, getNumPrograms()))
+    if (juce::isPositiveAndBelow (index, getNumFactoryPresets()))
         return spectra::factoryPresets[(size_t) index].name;
-    return {};
+
+    const juce::ScopedLock sl (userPresetLock);
+    const int u = index - getNumFactoryPresets();
+    return juce::isPositiveAndBelow (u, (int) userPresets.size()) ? userPresets[(size_t) u].name : juce::String();
+}
+
+//==============================================================================
+juce::File SpectraProcessor::userPresetFolder()
+{
+    if (auto* overrideDir = std::getenv ("SPECTRA_PRESET_DIR"))   // used by the tests
+        return juce::File (overrideDir);
+    const auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    return base.getChildFile ("Audio/Presets/Shreyas/Spectra");   // ~/Library/Audio/Presets/...
+   #else
+    return base.getChildFile ("Shreyas/Spectra/Presets");          // %APPDATA%\Shreyas\Spectra\Presets
+   #endif
+}
+
+void SpectraProcessor::refreshUserPresets()
+{
+    std::vector<UserPreset> found;
+    for (const auto& f : userPresetFolder().findChildFiles (juce::File::findFiles, false, "*.spectrapreset"))
+        if (auto xml = juce::XmlDocument::parse (f); xml != nullptr && xml->hasTagName ("SpectraPreset"))
+            found.push_back ({ xml->getStringAttribute ("name", f.getFileNameWithoutExtension()), f });
+
+    std::sort (found.begin(), found.end(),
+               [] (const UserPreset& a, const UserPreset& b) { return a.name.compareNatural (b.name) < 0; });
+
+    // Keep pointing at the same preset if the list around it changed.
+    const juce::String currentName = getProgramName (currentProgram);
+    const bool wasUser = isUserPreset (currentProgram);
+    {
+        const juce::ScopedLock sl (userPresetLock);
+        userPresets = std::move (found);
+    }
+    if (wasUser)
+    {
+        int index = 0;
+        for (int i = getNumFactoryPresets(); i < getNumPrograms(); ++i)
+            if (getProgramName (i) == currentName) { index = i; break; }
+        currentProgram = index;
+    }
+    updateHostDisplay (ChangeDetails().withProgramChanged (true));
+}
+
+juce::File SpectraProcessor::getUserPresetFile (int programIndex) const
+{
+    const juce::ScopedLock sl (userPresetLock);
+    const int u = programIndex - getNumFactoryPresets();
+    return juce::isPositiveAndBelow (u, (int) userPresets.size()) ? userPresets[(size_t) u].file : juce::File();
+}
+
+int SpectraProcessor::saveUserPreset (const juce::String& rawName)
+{
+    const auto name = rawName.trim().substring (0, 48);
+    const auto fileName = juce::File::createLegalFileName (name);
+    if (name.isEmpty() || fileName.isEmpty()) return -1;
+
+    juce::XmlElement xml ("SpectraPreset");
+    xml.setAttribute ("name", name);
+    xml.setAttribute ("format", 1);
+    for (auto* param : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param); ranged != nullptr && ranged->getParameterID() != "freeze")
+        {
+            auto* e = xml.createNewChildElement ("PARAM");
+            e->setAttribute ("id", ranged->getParameterID());
+            e->setAttribute ("value", (double) ranged->convertFrom0to1 (ranged->getValue()));
+        }
+
+    const auto folder = userPresetFolder();
+    if (! folder.createDirectory()) return -1;
+    if (! xml.writeTo (folder.getChildFile (fileName + ".spectrapreset"))) return -1;
+
+    refreshUserPresets();
+    for (int i = getNumFactoryPresets(); i < getNumPrograms(); ++i)
+        if (getProgramName (i) == name)
+        {
+            currentProgram = i;
+            updateHostDisplay (ChangeDetails().withProgramChanged (true));
+            return i;
+        }
+    return -1;
+}
+
+bool SpectraProcessor::deleteUserPreset (int programIndex)
+{
+    const auto file = getUserPresetFile (programIndex);
+    if (file == juce::File() || ! file.deleteFile()) return false;
+    if (programIndex == currentProgram) currentProgram = 0;   // the preset is gone; the sound stays as it is
+    refreshUserPresets();
+    return true;
+}
+
+void SpectraProcessor::applyPresetFile (const juce::File& file)
+{
+    if (auto xml = juce::XmlDocument::parse (file))
+        for (auto* e : xml->getChildWithTagNameIterator ("PARAM"))
+            if (const auto id = e->getStringAttribute ("id"); id.isNotEmpty() && id != "freeze")
+                setParam (id, e->getDoubleAttribute ("value"));
 }
 
 void SpectraProcessor::setParam (const juce::String& id, double plainValue)
@@ -252,6 +359,11 @@ void SpectraProcessor::setCurrentProgram (int index)
         return;
 
     currentProgram = index;
+    if (isUserPreset (index))
+    {
+        applyPresetFile (getUserPresetFile (index));
+        return;
+    }
     const auto& pr = spectra::factoryPresets[(size_t) index];
     setParam ("size", pr.size);       setParam ("scan", pr.scan);
     setParam ("drift", pr.drift);     setParam ("spread", pr.spread);
@@ -289,7 +401,8 @@ void SpectraProcessor::setUiScale (float s)
 void SpectraProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
-    state.setProperty ("program", currentProgram, nullptr);
+    state.setProperty ("program", currentProgram.load(), nullptr);
+    state.setProperty ("programName", getProgramName (currentProgram), nullptr);
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -300,7 +413,13 @@ void SpectraProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xml->hasTagName (apvts.state.getType()))
         {
             auto state = juce::ValueTree::fromXml (*xml);
-            currentProgram = juce::jlimit (0, getNumPrograms() - 1, (int) state.getProperty ("program", 0));
+            // Match a user preset by name: the list may have changed since the project was saved.
+            const auto name = state.getProperty ("programName").toString();
+            int index = juce::jlimit (0, getNumPrograms() - 1, (int) state.getProperty ("program", 0));
+            if (name.isNotEmpty() && getProgramName (index) != name)
+                for (int i = 0; i < getNumPrograms(); ++i)
+                    if (getProgramName (i) == name) { index = i; break; }
+            currentProgram = index;
             apvts.replaceState (state);
         }
 }

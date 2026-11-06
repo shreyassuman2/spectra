@@ -2,7 +2,7 @@
 
 Free spectral freeze / granular texture fx plugin. It captures a moment of sound and stretches it into a pad using FFT.
 
-VST3 · Mac and Windows · built with [JUCE](https://juce.com)
+VST3 and Audio Unit · Mac and Windows · built with [JUCE](https://juce.com)
 
 ### [Download Spectra](https://github.com/shreyassuman2/spectra/releases/latest)
 
@@ -49,6 +49,12 @@ To remove it later, use **Settings → Apps → Spectra (VST3) → Uninstall**.
 
 Go to **Options → Manage plugins**, click **Find plugins**, and Spectra shows up under effects. Add it to a mixer track like any other effect. Other DAWs that support VST3 (Ableton Live, Reaper, Bitwig, Studio One) find it on their next plugin scan.
 
+On a Mac, the installer also adds an Audio Unit version for Logic Pro and GarageBand. Find it under **Audio Units → Shreyas → Spectra**.
+
+### Your own presets
+
+On the **presets** page, click **save as...**, type a name, and press Enter. To delete one, right-click it. Presets are saved as small files in `~/Library/Audio/Presets/Shreyas/Spectra` on Mac and `%APPDATA%\Shreyas\Spectra\Presets` on Windows, so you can back them up or share them.
+
 ## Build
 
 Requires JUCE (default path `~/JUCE`) and CMake.
@@ -80,3 +86,7 @@ cmake --build build --target SpectraTests
 ```
 
 To re-render the demo GIF frames: `./build/SpectraTests_artefacts/Release/SpectraTests --demo-frames <dir>` (15 fps PNGs).
+
+## License
+
+Spectra is free software under the [GNU AGPLv3](LICENSE). It is built with JUCE, which is used under the same license. Release notes are in [CHANGELOG.md](CHANGELOG.md).

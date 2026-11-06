@@ -58,6 +58,8 @@ public:
     int getPopupMenuBorderSize() override { return 6; }
     void drawTooltip (juce::Graphics&, const juce::String&, int w, int h) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String&, juce::Point<int>, juce::Rectangle<int>) override;
+    void fillTextEditorBackground (juce::Graphics&, int w, int h, juce::TextEditor&) override;
+    void drawTextEditorOutline (juce::Graphics&, int w, int h, juce::TextEditor&) override;
 };
 
 //==============================================================================
@@ -146,24 +148,49 @@ private:
     bool frozen = false;
 };
 
-/** Preset list shown on the screen: name and a one-line description per row. Clicking loads it. */
+/** Preset list shown on the screen: factory presets with a one-line description, then the
+    user's own presets. Click to load; right-click a user preset to delete it. "save as..." stores
+    the current sound under a new name. */
 class PresetsPage final : public juce::Component
 {
 public:
     explicit PresetsPage (SpectraProcessor&);
+    void refresh();   // re-reads the user preset folder
     void tick();
     void paint (juce::Graphics&) override;
-    void mouseMove (const juce::MouseEvent&) override;
-    void mouseExit (const juce::MouseEvent&) override;
-    void mouseUp (const juce::MouseEvent&) override;
+    void resized() override;
 
 private:
-    int rowAt (juce::Point<int>) const;
-    juce::Rectangle<int> rowBounds (int index) const;
-    void setHovered (int);
+    class List final : public juce::Component
+    {
+    public:
+        explicit List (PresetsPage& o) : owner (o) { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+        void paint (juce::Graphics&) override;
+        void mouseMove (const juce::MouseEvent&) override;
+        void mouseExit (const juce::MouseEvent&) override;
+        void mouseUp (const juce::MouseEvent&) override;
+        int layoutHeight() const;
+        int rowAt (juce::Point<int>) const;               // program index, or -1
+        juce::Rectangle<int> rowBounds (int program) const;
+
+    private:
+        PresetsPage& owner;
+        int hovered = -1;
+    };
+
+    void updateLayout();
+    void beginSave();
+    void finishSave (bool commit);
+    void showUserPresetMenu (int program);
+
+    static constexpr int rowH = 36, headerH = 30, barH = 44;
 
     SpectraProcessor& proc;
-    int hovered = -1, shownProgram = -1;
+    List list { *this };
+    juce::Viewport viewport;
+    juce::TextEditor nameEditor;
+    TextLink saveLink { "save as..." }, confirmLink { "save" }, cancelLink { "cancel" };
+    int shownProgram = -1, shownCount = -1;
 };
 
 class SettingsPage final : public juce::Component

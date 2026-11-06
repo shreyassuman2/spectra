@@ -8,11 +8,18 @@
         <allowed-os-versions><os-version min="11.0"/></allowed-os-versions>
     </volume-check>
     <choices-outline>
-        <line choice="default"><line choice="com.shreyas.spectra.vst3"/></line>
+        <line choice="default">
+            <line choice="com.shreyas.spectra.vst3"/>
+            <line choice="com.shreyas.spectra.au"/>
+        </line>
     </choices-outline>
     <choice id="default"/>
     <choice id="com.shreyas.spectra.vst3" visible="false">
         <pkg-ref id="com.shreyas.spectra.vst3"/>
     </choice>
-    <pkg-ref id="com.shreyas.spectra.vst3" version="@VERSION@" onConclusion="none">Spectra.pkg</pkg-ref>
+    <choice id="com.shreyas.spectra.au" visible="false">
+        <pkg-ref id="com.shreyas.spectra.au"/>
+    </choice>
+    <pkg-ref id="com.shreyas.spectra.vst3" version="@VERSION@" onConclusion="none">Spectra-vst3.pkg</pkg-ref>
+    <pkg-ref id="com.shreyas.spectra.au" version="@VERSION@" onConclusion="none">Spectra-au.pkg</pkg-ref>
 </installer-gui-script>
