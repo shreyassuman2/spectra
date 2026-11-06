@@ -31,7 +31,7 @@ Click **freeze** to capture the last moment of sound, and click it again to rele
 ### Mac
 
 1. Download the `.pkg` file and double-click it.
-2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate(I'm not paying 100 a year for that shi). Click **Done**.
+2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate(it's pretty expensive I believe 100 a year). Click **Done**.
 3. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Spectra.
 4. The installer opens. Click **Continue → Install**.
 
@@ -40,7 +40,7 @@ Spectra works on Apple Silicon and Intel Macs running macOS 11 or later.
 ### Windows
 
 1. Download the `setup.exe` file and double-click it.
-2. If Windows shows *"Windows protected your PC"*, click **More info → Run anyway**. Spectra isn't signed w/ a paid certificate(again I'm not spending 100 on that), which is why that appears.
+2. If Windows shows *"Windows protected your PC"*, click **More info → Run anyway**. Spectra isn't signed w/ a paid certificate(same reason as mac), which is why that appears.
 3. Click through the installer. It puts Spectra in `C:\Program Files\Common Files\VST3`.
 
 To remove it later, use **Settings → Apps → Spectra (VST3) → Uninstall**.
