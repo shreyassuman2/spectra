@@ -45,3 +45,17 @@ target_link_libraries(Spectra
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# Offline DSP checks (not built by default):  cmake --build build --target SpectraTests && ./build/SpectraTests_artefacts/Release/SpectraTests
+juce_add_console_app(SpectraTests PRODUCT_NAME "SpectraTests")
+set_target_properties(SpectraTests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+target_sources(SpectraTests PRIVATE
+    tests/SpectraTests.cpp
+    Source/PluginProcessor.cpp
+    Source/PluginEditor.cpp
+    Source/SpectralEngine.cpp)
+target_compile_definitions(SpectraTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(SpectraTests PRIVATE
+    juce::juce_audio_utils
+    juce::juce_dsp
+    juce::juce_recommended_config_flags)
