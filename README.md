@@ -90,6 +90,12 @@ cmake --build build --target SpectraTests
 
 To re-render the demo GIF frames: `./build/SpectraTests_artefacts/Release/SpectraTests --demo-frames <dir>` (15 fps PNGs).
 
+To re-render the demo video, run `--demo-video <dir>` (30 fps PNGs at 2× plus `audio.wav`), then combine them with ffmpeg:
+
+```sh
+ffmpeg -framerate 30 -i <dir>/%04d.png -i <dir>/audio.wav -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest demo.mp4
+```
+
 ## License
 
 Spectra is free software under the [GNU AGPLv3](LICENSE). It is built with JUCE, which is used under the same license. Release notes are in [CHANGELOG.md](CHANGELOG.md).
