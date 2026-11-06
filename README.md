@@ -16,7 +16,7 @@ Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 | Envelope | **Attack** (10 ms–5 s), **Release** (10 ms–10 s) |
 | Output | **Mix** (how much the pad replaces the dry signal while frozen), **Level** |
 
-The UI is deliberately minimal. A screen on the left shows the live spectrum and the captured slice. To its right are a large **freeze** button and four knobs: size, diffuse, shift and mix. The screen's **settings** tab holds the other eleven controls as simple sliders, plus *randomize texture*. Set the window size from the % menu at the top right (75–150%).
+A screen on the left shows the live spectrum and the captured slice. To its right are a large **freeze** button and four knobs: size, diffuse, shift and mix. The screen's **settings** tab holds the other eleven controls as simple sliders, plus *randomize texture*. Set the window size from the % menu at the top right (75–150%).
 
 Click **freeze** to capture the last moment of sound, and click it again to release. While unfrozen, audio passes through untouched.
 
