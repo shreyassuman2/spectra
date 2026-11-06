@@ -46,7 +46,7 @@ bool prefersReducedMotion()
 //==============================================================================
 LookAndFeel::LookAndFeel()
 {
-    setColour (juce::PopupMenu::backgroundColourId, colours::surface);
+    setColour (juce::PopupMenu::backgroundColourId, colours::surface.withAlpha (0.995f));   // non-opaque: rounded corners
     setColour (juce::PopupMenu::textColourId, colours::text);
     setColour (juce::PopupMenu::highlightedBackgroundColourId, colours::control);
     setColour (juce::PopupMenu::highlightedTextColourId, colours::gold);
@@ -111,16 +111,58 @@ juce::Font LookAndFeel::getPopupMenuFont() { return mono (12.5f); }
 
 void LookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int w, int h)
 {
-    g.fillAll (colours::surface);
+    const auto r = juce::Rectangle<int> (0, 0, w, h).toFloat();
+    g.setColour (colours::surface);
+    g.fillRoundedRectangle (r, 10.0f);
     g.setColour (colours::line);
-    g.drawRect (0, 0, w, h);
+    g.drawRoundedRectangle (r.reduced (0.5f), 10.0f, 1.0f);
+}
+
+void LookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area, bool isSeparator, bool isActive,
+                                     bool isHighlighted, bool isTicked, bool, const juce::String& text,
+                                     const juce::String&, const juce::Drawable*, const juce::Colour*)
+{
+    if (isSeparator)
+    {
+        g.setColour (colours::line);
+        g.fillRect (area.reduced (10, 0).withSizeKeepingCentre (area.getWidth() - 20, 1));
+        return;
+    }
+    if (isHighlighted && isActive)
+    {
+        g.setColour (colours::control);
+        g.fillRoundedRectangle (area.toFloat().reduced (0.0f, 1.0f), 6.0f);   // 10 outer = 6 inner + 4 inset
+    }
+    if (isTicked)
+    {
+        g.setColour (colours::gold);
+        g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ (float) area.getX() + 12.0f, (float) area.getCentreY() }));
+    }
+    g.setFont (mono (12.0f));
+    g.setColour (! isActive ? colours::faint : isTicked ? colours::gold : isHighlighted ? colours::text : colours::text.withAlpha (0.8f));
+    g.drawText (text.toLowerCase(), area.withTrimmedLeft (24).withTrimmedRight (12), juce::Justification::centredLeft, true);
+}
+
+void LookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int,
+                                             int& idealWidth, int& idealHeight)
+{
+    idealHeight = isSeparator ? 9 : 28;
+    idealWidth = juce::GlyphArrangement::getStringWidthInt (mono (12.0f), text) + 24 + 16;
+}
+
+static juce::GlyphArrangement layoutTooltip (const juce::String& text)
+{
+    juce::GlyphArrangement glyphs;
+    glyphs.addJustifiedText (mono (11.5f), text, 0.0f, 0.0f, 320.0f, juce::Justification::left, 3.0f);
+    return glyphs;
 }
 
 juce::Rectangle<int> LookAndFeel::getTooltipBounds (const juce::String& text, juce::Point<int> pos,
                                                     juce::Rectangle<int> parentArea)
 {
-    const int w = std::min (340, juce::GlyphArrangement::getStringWidthInt (mono (11.5f), text) + 24);
-    const int h = 28;
+    const auto box = layoutTooltip (text).getBoundingBox (0, -1, true);
+    const int w = (int) std::ceil (box.getWidth()) + 24;
+    const int h = std::max (28, (int) std::ceil (box.getHeight()) + 16);
     return juce::Rectangle<int> (pos.x > parentArea.getCentreX() ? pos.x - (w + 12) : pos.x + 14,
                                  pos.y > parentArea.getCentreY() ? pos.y - (h + 8)  : pos.y + 18,
                                  w, h).constrainedWithin (parentArea);
@@ -133,8 +175,10 @@ void LookAndFeel::drawTooltip (juce::Graphics& g, const juce::String& text, int 
     g.setColour (colours::line);
     g.drawRoundedRectangle (juce::Rectangle<int> (0, 0, w, h).toFloat().reduced (0.5f), 6.0f, 1.0f);
     g.setColour (colours::text);
-    g.setFont (mono (11.5f));
-    g.drawFittedText (text, juce::Rectangle<int> (0, 0, w, h).reduced (12, 2), juce::Justification::centredLeft, 1);
+    auto glyphs = layoutTooltip (text);
+    const auto box = glyphs.getBoundingBox (0, -1, true);
+    glyphs.draw (g, juce::AffineTransform::translation (12.0f - box.getX(), ((float) h - box.getHeight()) * 0.5f - box.getY()));
+    juce::ignoreUnused (w);
 }
 
 //==============================================================================
@@ -209,7 +253,7 @@ void SliderRow::paint (juce::Graphics& g)
 FreezeButton::FreezeButton() : juce::Button ("Freeze")
 {
     setClickingTogglesState (true);
-    setTooltip ("Capture the last moment of sound and hold it as a pad. Click again to release.");
+    setTooltip ("Hold the last moment as a pad. Click to release.");
 }
 
 void FreezeButton::tick (float dt, bool reducedMotion)
@@ -408,6 +452,92 @@ void SpectrumView::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+PresetsPage::PresetsPage (SpectraProcessor& p) : proc (p)
+{
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+}
+
+juce::Rectangle<int> PresetsPage::rowBounds (int index) const
+{
+    const int n = std::max (1, proc.getNumPrograms());
+    const int rowH = getHeight() / n;
+    return { 0, index * rowH, getWidth(), rowH };
+}
+
+int PresetsPage::rowAt (juce::Point<int> p) const
+{
+    for (int i = 0; i < proc.getNumPrograms(); ++i)
+        if (rowBounds (i).contains (p)) return i;
+    return -1;
+}
+
+void PresetsPage::setHovered (int index)
+{
+    if (index != hovered) { hovered = index; repaint(); }
+}
+
+void PresetsPage::mouseMove (const juce::MouseEvent& e) { setHovered (rowAt (e.getPosition())); }
+void PresetsPage::mouseExit (const juce::MouseEvent&)    { setHovered (-1); }
+
+void PresetsPage::mouseUp (const juce::MouseEvent& e)
+{
+    if (const int i = rowAt (e.getPosition()); i >= 0 && e.mouseWasClicked())
+    {
+        proc.setCurrentProgram (i);
+        tick();
+    }
+}
+
+void PresetsPage::tick()
+{
+    if (shownProgram != proc.getCurrentProgram())
+    {
+        shownProgram = proc.getCurrentProgram();
+        repaint();
+    }
+}
+
+void PresetsPage::paint (juce::Graphics& g)
+{
+    const int n = proc.getNumPrograms();
+    for (int i = 0; i < n; ++i)
+    {
+        const auto row = rowBounds (i);
+        const bool current = i == proc.getCurrentProgram();
+
+        if (i == hovered)
+        {
+            g.setColour (colours::control);
+            g.fillRoundedRectangle (row.toFloat().reduced (0.0f, 2.0f), 8.0f);
+        }
+        else if (i < n - 1 && i + 1 != hovered)
+        {
+            g.setColour (colours::line.withAlpha (0.6f));
+            g.fillRect (row.getX() + 12, row.getBottom() - 1, row.getWidth() - 24, 1);
+        }
+
+        if (current)
+        {
+            g.setColour (colours::gold);
+            g.fillEllipse (juce::Rectangle<float> (5.0f, 5.0f).withCentre ({ (float) row.getX() + 14.0f, (float) row.getCentreY() }));
+        }
+
+        g.setFont (light (15.0f, 0.04f));
+        g.setColour (current ? colours::gold : i == hovered ? colours::text : colours::text.withAlpha (0.85f));
+        g.drawText (proc.getProgramName (i).toLowerCase(), row.withTrimmedLeft (28).withWidth (150),
+                    juce::Justification::centredLeft, true);
+
+        if ((size_t) i < factoryPresets.size())
+        {
+            g.setFont (mono (10.5f));
+            g.setColour (i == hovered ? colours::text.withAlpha (0.75f) : colours::dim);
+            g.drawText (factoryPresets[(size_t) i].description, row.withTrimmedLeft (180).withTrimmedRight (14),
+                        juce::Justification::centredLeft, true);
+        }
+    }
+}
+
+//==============================================================================
 SettingsPage::SettingsPage (SpectraProcessor& proc)
 {
     auto& s = proc.apvts;
@@ -445,33 +575,40 @@ void SettingsPage::resized()
 }
 
 //==============================================================================
-Screen::Screen (SpectraProcessor& proc) : spectrum (proc.getVisualState()), settings (proc)
+Screen::Screen (SpectraProcessor& proc) : spectrum (proc.getVisualState()), settings (proc), presets (proc)
 {
-    addAndMakeVisible (spectrum);
-    addChildComponent (settings);
-    addAndMakeVisible (spectrumTab);
-    addAndMakeVisible (settingsTab);
-    spectrumTab.setSelected (true);
-    spectrumTab.onClick = [this] { showSettings (false); };
-    settingsTab.onClick = [this] { showSettings (true); };
+    pages = { &spectrum, &settings, &presets };
+    tabs  = { &spectrumTab, &settingsTab, &presetsTab };
+    for (int i = 0; i < 3; ++i)
+    {
+        addChildComponent (pages[(size_t) i]);
+        addAndMakeVisible (tabs[(size_t) i]);
+        tabs[(size_t) i]->onClick = [this, i] { showPage (i); };
+    }
+    pageAlpha[spectrumPage].snap (1.0f);
+    spectrum.setVisible (true);
+    showPage (spectrumPage);
 }
 
-void Screen::showSettings (bool show)
+void Screen::showPage (int newPage)
 {
-    settingsAmount.target = show ? 1.0f : 0.0f;
-    spectrumTab.setSelected (! show);
-    settingsTab.setSelected (show);
-    if (show) settings.setVisible (true);
-    settings.setInterceptsMouseClicks (show, show);
+    page = newPage;
+    for (int i = 0; i < 3; ++i)
+    {
+        const bool on = i == page;
+        tabs[(size_t) i]->setSelected (on);
+        pageAlpha[(size_t) i].target = on ? 1.0f : 0.0f;
+        pages[(size_t) i]->setInterceptsMouseClicks (on, on);
+        if (on) pages[(size_t) i]->setVisible (true);
+    }
 }
 
 void Screen::resized()
 {
-    spectrumTab.setBounds (24, 16, 72, 22);
-    settingsTab.setBounds (104, 16, 72, 22);
+    for (int i = 0; i < 3; ++i)
+        tabs[(size_t) i]->setBounds (24 + i * 80, 16, 72, 22);
     const auto content = getLocalBounds().withTrimmedTop (56).reduced (24, 0).withTrimmedBottom (24);
-    spectrum.setBounds (content);
-    settings.setBounds (content);
+    for (auto* p : pages) p->setBounds (content);
 }
 
 void Screen::paint (juce::Graphics& g)
@@ -488,14 +625,15 @@ void Screen::tick (float dt, bool)
         spectrumAccumulator = std::fmod (spectrumAccumulator, 1.0f / 30.0f);
         spectrum.tick();
     }
+    presets.tick();
 
-    // Tab switch: a short opacity cross-fade only (high-frequency interaction).
-    if (settingsAmount.update (dt, 0.05f) || settings.isVisible())
+    // Page switch: a short opacity cross-fade only (high-frequency interaction).
+    for (size_t i = 0; i < 3; ++i)
     {
-        const float a = settingsAmount.value;
-        settings.setAlpha (a);
-        spectrum.setAlpha (1.0f - a);
-        if (a <= 0.0f && settingsAmount.target <= 0.0f) settings.setVisible (false);
+        pageAlpha[i].update (dt, 0.05f);
+        const float a = pageAlpha[i].value;
+        pages[i]->setAlpha (a);
+        pages[i]->setVisible (a > 0.0f);
     }
 }
 
@@ -548,12 +686,8 @@ void PresetNav::refresh()
 
 void PresetNav::mouseUp (const juce::MouseEvent& e)
 {
-    if (! nameArea().contains (e.getPosition())) return;
-    juce::PopupMenu menu;
-    for (int i = 0; i < proc.getNumPrograms(); ++i)
-        menu.addItem (i + 1, proc.getProgramName (i).toLowerCase(), true, i == proc.getCurrentProgram());
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMinimumWidth (getWidth()),
-                        [this] (int result) { if (result > 0) { proc.setCurrentProgram (result - 1); refresh(); } });
+    if (nameArea().contains (e.getPosition()) && e.mouseWasClicked() && onNameClicked)
+        onNameClicked();
 }
 
 void PresetNav::paint (juce::Graphics& g)
@@ -569,15 +703,19 @@ Content::Content (SpectraProcessor& proc, std::function<void (float)> scaleCallb
     : spectraProcessor (proc), onScaleChosen (std::move (scaleCallback)), presetNav (proc), screen (proc)
 {
     auto& s = proc.apvts;
-    knobs.push_back (std::make_unique<Knob> (s, "size",    "size",    "How much of the last moment is captured, one frame up to 2 s."));
+    knobs.push_back (std::make_unique<Knob> (s, "size",    "size",    "Length of the captured moment, up to 2 s."));
     knobs.push_back (std::make_unique<Knob> (s, "diffuse", "diffuse", "Tonal and pitched at 0, an airy wash at 100%."));
     knobs.push_back (std::make_unique<Knob> (s, "shift",   "shift",   "Pitch in semitones. Hold Shift to drag finely.", true));
-    knobs.push_back (std::make_unique<Knob> (s, "mix",     "mix",     "How much the pad replaces the dry signal while frozen."));
+    knobs.push_back (std::make_unique<Knob> (s, "mix",     "mix",     "How much the pad replaces the dry sound."));
     for (auto& k : knobs) addAndMakeVisible (*k);
 
     addAndMakeVisible (screen);
     addAndMakeVisible (freeze);
     addAndMakeVisible (presetNav);
+    presetNav.onNameClicked = [this]
+    {
+        screen.showPage (screen.getPage() == Screen::presetsPage ? Screen::spectrumPage : Screen::presetsPage);
+    };
     freezeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (s, "freeze", freeze);
 
     scaleButton.setTooltip ("Window size");
@@ -596,11 +734,13 @@ void Content::setScaleLabel (float scale)
 void Content::showScaleMenu()
 {
     juce::PopupMenu menu;
+    menu.setLookAndFeel (&getLookAndFeel());   // set up front: JUCE checks opacity before the menu inherits it, which left white corners
     const float current = spectraProcessor.getUiScale();
     for (int i = 0; i < scaleSteps.size(); ++i)
         menu.addItem (i + 1, juce::String (juce::roundToInt (scaleSteps[i] * 100.0f)) + "%", true,
                       std::abs (scaleSteps[i] - current) < 0.01f);
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&scaleButton),
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&scaleButton).withParentComponent (this)
+                                                  .withMinimumWidth (72),
                         [this] (int result) { if (result > 0 && onScaleChosen) onScaleChosen (scaleSteps[result - 1]); });
 }
 

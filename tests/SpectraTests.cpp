@@ -149,25 +149,69 @@ static int snapshot (const char* path)
     };
     save ("");
 
-    // Open the Advanced drawer and let it animate in
-    std::function<juce::Button* (juce::Component&)> findButton = [&] (juce::Component& c) -> juce::Button*
+    auto settle = [&]
     {
-        for (auto* child : c.getChildren())
-        {
-            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == "settings") return b;
-            if (auto* found = findButton (*child)) return found;
-        }
-        return nullptr;
-    };
-    if (auto* toggle = findButton (*editor))
-    {
-        toggle->triggerClick();
         for (int i = 0; i < 30; ++i)
         {
             rig.run (1.0 / 30.0, gen, t);
             juce::MessageManager::getInstance()->runDispatchLoopUntil (34);
         }
-        save ("-settings");
+    };
+    std::function<juce::Button* (juce::Component&, const juce::String&)> findButton =
+        [&] (juce::Component& c, const juce::String& name) -> juce::Button*
+    {
+        for (auto* child : c.getChildren())
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == name) return b;
+            if (auto* found = findButton (*child, name)) return found;
+        }
+        return nullptr;
+    };
+    for (auto* tab : { "settings", "presets" })
+        if (auto* b = findButton (*editor, tab))
+        {
+            b->triggerClick();
+            settle();
+            save (juce::String ("-") + tab);
+        }
+
+    // Tooltips for the freeze button and the four knobs, stacked into one image
+    {
+        auto& lnf = editor->getLookAndFeel();
+        const juce::StringArray tips { "Hold the last moment as a pad. Click to release.",
+                                       "Length of the captured moment, up to 2 s.",
+                                       "Tonal and pitched at 0, an airy wash at 100%.",
+                                       "Pitch in semitones. Hold Shift to drag finely.",
+                                       "How much the pad replaces the dry sound.",
+                                       "Roll new values for scan, drift, spread, diffuse, blur, tone, width and shimmer." };
+        juce::Image img (juce::Image::ARGB, 380, 480, true);
+        juce::Graphics g (img);
+        g.fillAll (juce::Colour (0xff100d1e));
+        int y = 10;
+        for (auto& tip : tips)
+        {
+            const auto r = lnf.getTooltipBounds (tip, { 10, 0 }, { 0, 0, 380, 2000 });
+            juce::Graphics::ScopedSaveState state (g);
+            g.setOrigin (10, y);
+            lnf.drawTooltip (g, tip, r.getWidth(), r.getHeight());
+            y += r.getHeight() + 10;
+        }
+        {
+            // The window-size menu, drawn the same way the popup draws it
+            juce::Graphics::ScopedSaveState state (g);
+            g.setOrigin (280, y + 4);
+            const juce::StringArray items { "75%", "90%", "100%", "125%", "150%" };
+            const int border = lnf.getPopupMenuBorderSize(), w = 84;
+            lnf.drawPopupMenuBackground (g, w, items.size() * 28 + border * 2);
+            for (int i = 0; i < items.size(); ++i)
+                lnf.drawPopupMenuItem (g, { border, border + i * 28, w - border * 2, 28 }, false, true, i == 3, i == 2,
+                                       false, items[i], {}, nullptr, nullptr);
+        }
+        juce::File base (juce::File::getCurrentWorkingDirectory().getChildFile (path));
+        auto file = base.getSiblingFile (base.getFileNameWithoutExtension() + "-tooltips.png");
+        file.deleteFile();
+        juce::FileOutputStream os (file);
+        juce::PNGImageFormat().writeImageToStream (img, os);
     }
     editor = nullptr;
     return 0;

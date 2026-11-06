@@ -49,6 +49,13 @@ public:
                            juce::Slider::SliderStyle, juce::Slider&) override;
     juce::Font getPopupMenuFont() override;
     void drawPopupMenuBackground (juce::Graphics&, int w, int h) override;
+    void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>& area, bool isSeparator, bool isActive,
+                            bool isHighlighted, bool isTicked, bool hasSubMenu, const juce::String& text,
+                            const juce::String& shortcutKeyText, const juce::Drawable* icon,
+                            const juce::Colour* textColour) override;
+    void getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int standardMenuItemHeight,
+                                    int& idealWidth, int& idealHeight) override;
+    int getPopupMenuBorderSize() override { return 6; }
     void drawTooltip (juce::Graphics&, const juce::String&, int w, int h) override;
     juce::Rectangle<int> getTooltipBounds (const juce::String&, juce::Point<int>, juce::Rectangle<int>) override;
 };
@@ -139,6 +146,26 @@ private:
     bool frozen = false;
 };
 
+/** Preset list shown on the screen: name and a one-line description per row. Clicking loads it. */
+class PresetsPage final : public juce::Component
+{
+public:
+    explicit PresetsPage (SpectraProcessor&);
+    void tick();
+    void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    int rowAt (juce::Point<int>) const;
+    juce::Rectangle<int> rowBounds (int index) const;
+    void setHovered (int);
+
+    SpectraProcessor& proc;
+    int hovered = -1, shownProgram = -1;
+};
+
 class SettingsPage final : public juce::Component
 {
 public:
@@ -150,7 +177,7 @@ private:
     TextLink randomize { "randomize texture" };
 };
 
-/** The screen: two tabs ("spectrum", "settings") that cross-fade. */
+/** The screen: three tabs ("spectrum", "settings", "presets") that cross-fade. */
 class Screen final : public juce::Component
 {
 public:
@@ -159,13 +186,19 @@ public:
     void resized() override;
     void tick (float dt, bool reducedMotion);
 
-private:
-    void showSettings (bool);
+    enum Page { spectrumPage, settingsPage, presetsPage };
+    void showPage (int);
+    int getPage() const { return page; }
 
+private:
     SpectrumView spectrum;
     SettingsPage settings;
-    TextLink spectrumTab { "spectrum" }, settingsTab { "settings" };
-    Smoothed settingsAmount;
+    PresetsPage presets;
+    TextLink spectrumTab { "spectrum" }, settingsTab { "settings" }, presetsTab { "presets" };
+    std::array<juce::Component*, 3> pages {};
+    std::array<TextLink*, 3> tabs {};
+    std::array<Smoothed, 3> pageAlpha {};
+    int page = spectrumPage;
     float spectrumAccumulator = 0.0f;
 };
 
@@ -181,6 +214,7 @@ public:
     void mouseEnter (const juce::MouseEvent&) override { repaint(); }
     void mouseExit (const juce::MouseEvent&) override  { repaint(); }
     void refresh();
+    std::function<void()> onNameClicked;
 
 private:
     struct Chevron final : public juce::Button
