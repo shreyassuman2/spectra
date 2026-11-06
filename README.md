@@ -1,12 +1,12 @@
 # Spectra
 
-Spectral freeze / granular texture fx plugin. It captures a moment of sound and stretches it into a pad using FFT.
+Free spectral freeze / granular texture fx plugin. It captures a moment of sound and stretches it into a pad using FFT.
 
 VST3 · Mac and Windows · built with [JUCE](https://juce.com)
 
 ### [Download Spectra](https://github.com/shreyassuman2/spectra/releases/latest)
 
-Free. On the download page, pick the **`.pkg`** file for Mac or the **`setup.exe`** file for Windows. Then follow the [install steps](#install).
+ On the download page, pick the **`.pkg`** file for Mac or the **`setup.exe`** file for Windows. Then follow the [install steps](#install).
 
 ![Spectra demo: a chord plays, freeze is clicked, and the pad holds while the input changes. Diffuse, shift and size are swept, then spread and shimmer on the settings page, and the pad is released.](docs/demo.gif)
 
