@@ -128,6 +128,8 @@ static int snapshot (const char* path)
     rig.run (1.5, gen, t);
     setParam (rig.proc, "freeze", 1.0f);
 
+    if (auto* scaleEnv = std::getenv ("SPECTRA_SCALE"))
+        rig.proc.setUiScale ((float) std::atof (scaleEnv));
     std::unique_ptr<juce::AudioProcessorEditor> editor (rig.proc.createEditorAndMakeActive());
     editor->setVisible (true);
     for (int i = 0; i < 60; ++i)
@@ -135,12 +137,38 @@ static int snapshot (const char* path)
         rig.run (1.0 / 30.0, gen, t);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (34);
     }
-    auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
-    juce::File file (juce::File::getCurrentWorkingDirectory().getChildFile (path));
-    file.deleteFile();
-    juce::FileOutputStream os (file);
-    juce::PNGImageFormat().writeImageToStream (image, os);
-    std::printf ("wrote %s\n", file.getFullPathName().toRawUTF8());
+    auto save = [&] (const juce::String& suffix)
+    {
+        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
+        juce::File base (juce::File::getCurrentWorkingDirectory().getChildFile (path));
+        auto file = base.getSiblingFile (base.getFileNameWithoutExtension() + suffix + ".png");
+        file.deleteFile();
+        juce::FileOutputStream os (file);
+        juce::PNGImageFormat().writeImageToStream (image, os);
+        std::printf ("wrote %s (%dx%d)\n", file.getFullPathName().toRawUTF8(), editor->getWidth(), editor->getHeight());
+    };
+    save ("");
+
+    // Open the Advanced drawer and let it animate in
+    std::function<juce::Button* (juce::Component&)> findButton = [&] (juce::Component& c) -> juce::Button*
+    {
+        for (auto* child : c.getChildren())
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == "Advanced") return b;
+            if (auto* found = findButton (*child)) return found;
+        }
+        return nullptr;
+    };
+    if (auto* toggle = findButton (*editor))
+    {
+        toggle->triggerClick();
+        for (int i = 0; i < 30; ++i)
+        {
+            rig.run (1.0 / 30.0, gen, t);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (34);
+        }
+        save ("-advanced");
+    }
     editor = nullptr;
     return 0;
 }

@@ -114,7 +114,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SpectraProcessor::createLayo
     layout.add (percentParam ("shimmer", "Shimmer", 0.0f));
 
     layout.add (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { "tilt", 1 }, "Tilt", Range (-1.0f, 1.0f), 0.0f,
+        juce::ParameterID { "tilt", 1 }, "Tone", Range (-1.0f, 1.0f), 0.0f,
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (tiltText)
                                              .withValueFromStringFunction ([] (const juce::String& t)
                                                                            { return numberValue (t) / 6.0f; })));
