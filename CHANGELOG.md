@@ -2,6 +2,12 @@
 
 Each release's notes on GitHub are taken from its section here.
 
+## 1.0.3
+
+- **Fixed a loud jump on Sub Drone.** Shifting the pitch down made the pad much louder (about 16 dB on Sub Drone), and shifting up made it quieter. Shift now keeps the level steady.
+- **Tone no longer changes the volume.** It now only makes the pad darker or brighter.
+- Every factory preset now plays at a similar loudness, and a new automated test keeps it that way.
+
 ## 1.0.2
 
 - **Save your own presets.** On the presets page, click *save as...*, type a name, and press Enter. Your presets appear under *your presets*. Right-click one to delete it or show it in Finder or Explorer.

@@ -428,6 +428,206 @@ static int demoFrames (const char* dir, bool video)
     return 0;
 }
 
+/** About a minute of Spectra in use, for a showcase video: 30 fps frames at 2x plus audio.wav.
+    Same electric-piano input as the short demo, playing a G-Em-C-D loop throughout. */
+static int demoShowcase (const char* dir)
+{
+    using P = juce::Point<float>;
+    Rig rig (2);
+    long t = 0;
+    double now = 0.0;
+    const double fps = 30.0, total = 57.0;
+    const float captureScale = 2.0f;
+
+    // Input ------------------------------------------------------------------
+    Keys keys;
+    const std::vector<std::vector<double>> progression {
+        { 98.0, 196.0, 246.94, 293.66, 369.99 },    // Gmaj7
+        { 82.41, 164.81, 246.94, 293.66, 369.99 },  // Em9
+        { 65.41, 130.81, 196.0, 246.94, 329.63 },   // Cmaj7
+        { 73.42, 146.83, 220.0, 277.18, 369.99 },   // Dmaj7
+    };
+    auto strike = [&] (int chordIndex, double at, double gain, double strum)
+    {
+        double when = at;
+        for (auto f : progression[(size_t) chordIndex]) { keys.notes.push_back ({ f, when, gain }); when += strum; }
+    };
+    strike (0, 0.10, 0.20, 0.11);
+    strike (0, 1.30, 0.20, 0.02);
+    for (int i = 0; 2.7 + i * 2.0 < 49.0; ++i)
+        strike ((i + 1) % 4, 2.7 + i * 2.0, 0.14, 0.09);
+    auto gen = [&] (int, long n) { return keys (n); };
+
+    std::unique_ptr<juce::AudioProcessorEditor> editor (rig.proc.createEditorAndMakeActive());
+    editor->setVisible (true);
+
+    std::function<juce::Button* (juce::Component&, const juce::String&)> findButton =
+        [&] (juce::Component& c, const juce::String& name) -> juce::Button*
+    {
+        for (auto* child : c.getChildren())
+        {
+            if (auto* b = dynamic_cast<juce::Button*> (child); b != nullptr && b->getName() == name) return b;
+            if (auto* found = findButton (*child, name)) return found;
+        }
+        return nullptr;
+    };
+    auto clickButton = [&] (const char* name) { if (auto* b = findButton (*editor, name)) b->triggerClick(); };
+    auto value = [&] (const char* id) { auto* prm = rig.proc.apvts.getParameter (id); return prm->convertFrom0to1 (prm->getValue()); };
+    auto norm  = [&] (const char* id, float plain) { return rig.proc.apvts.getParameter (id)->convertTo0to1 (plain); };
+
+    // Layout anchors in base coordinates (see Content / Screen / SettingsPage / PresetsPage)
+    const P freezeAt { 712, 150 }, sizeAt { 652, 282 }, diffuseAt { 772, 282 }, shiftAt { 652, 396 }, mixAt { 772, 396 };
+    const P spectrumTab { 88, 91 }, settingsTab { 168, 91 }, presetsTab { 248, 91 };
+    auto presetRow = [] (int i) { return P { 130.0f, 120.0f + (float) i * 36.0f + 18.0f }; };
+    auto sliderAt = [] (int col, int row, float v01) { return P { (col == 0 ? 61.0f : 325.0f) + v01 * 210.0f, 153.0f + (float) row * 50.0f }; };
+    const P randomizeAt { 390, 393 };
+
+    // Timeline ---------------------------------------------------------------
+    P cursor { 430, 300 };
+    bool cursorDown = false;
+    struct Event { double at; std::function<void()> fn; bool done = false; };
+    struct Gesture { double t0, t1; std::function<void (float)> fn; bool ended = false; };
+    std::vector<Event> events;
+    std::vector<Gesture> gestures;
+    P moveFrom = cursor, moveTo = cursor;
+    double moveStart = 0.0, moveEnd = 0.0;
+    auto ease = [] (double x) { x = juce::jlimit (0.0, 1.0, x); return x * x * (3.0 - 2.0 * x); };
+
+    auto moveAt = [&] (double at, P to, double duration)
+    {
+        events.push_back ({ at, [&, to, at, duration] { moveFrom = cursor; moveTo = to; moveStart = at; moveEnd = at + duration; } });
+    };
+    auto click = [&] (double at, P pos, std::function<void()> fn)
+    {
+        moveAt (at - 0.6, pos, 0.5);
+        events.push_back ({ at, [&, fn] { cursorDown = true; fn(); } });
+        events.push_back ({ at + 0.15, [&] { cursorDown = false; } });
+    };
+    auto knob = [&] (double t0, double t1, const char* id, P at, float from, float to)
+    {
+        moveAt (t0 - 0.6, at, 0.5);
+        const float dy = to >= from ? -28.0f : 28.0f;   // drag up to increase, down to decrease
+        gestures.push_back ({ t0, t1, [&, id, at, from, to, dy] (float k)
+        {
+            setParam (rig.proc, id, from + (to - from) * k);
+            cursor = at.translated (0, dy * k);
+        } });
+    };
+    auto slider = [&] (double t0, double t1, const char* id, int col, int row, float from, float to)
+    {
+        moveAt (t0 - 0.6, sliderAt (col, row, norm (id, from)), 0.5);
+        gestures.push_back ({ t0, t1, [&, id, col, row, from, to] (float k)
+        {
+            const float v = from + (to - from) * k;
+            setParam (rig.proc, id, v);
+            cursor = sliderAt (col, row, norm (id, v));
+        } });
+    };
+    auto freezeClick = [&] (double at, bool on) { click (at, freezeAt, [&, on] { setParam (rig.proc, "freeze", on ? 1.0f : 0.0f); }); };
+
+    // 1. Freeze and the four main knobs
+    freezeClick (2.0, true);
+    knob (3.2, 4.8, "diffuse", diffuseAt, 0.30f, 0.90f);
+    knob (5.6, 6.6, "diffuse", diffuseAt, 0.90f, 0.45f);
+    knob (7.6, 8.8, "shift", shiftAt, 0.0f, 12.0f);
+    knob (10.2, 11.0, "shift", shiftAt, 12.0f, 0.0f);
+    knob (12.0, 13.2, "size", sizeAt, 400.0f, 1500.0f);
+    // 2. Release, then re-freeze on a new chord (D, struck at 14.7)
+    freezeClick (14.2, false);
+    freezeClick (15.3, true);
+    // 3. Presets (they never touch freeze, so the pad keeps going)
+    click (16.8, presetsTab, [&] { clickButton ("presets"); });
+    click (18.0, presetRow (1), [&] { rig.proc.setCurrentProgram (1); });   // glass
+    click (21.0, presetRow (2), [&] { rig.proc.setCurrentProgram (2); });   // choir wash
+    click (24.0, presetRow (6), [&] { rig.proc.setCurrentProgram (6); });   // shimmer hall
+    click (27.0, presetRow (3), [&] { rig.proc.setCurrentProgram (3); });   // sub drone
+    click (30.0, presetRow (5), [&] { rig.proc.setCurrentProgram (5); });   // grain cloud
+    // 4. Settings page
+    click (32.6, settingsTab, [&] { clickButton ("settings"); });
+    events.push_back ({ 33.0, [&] {
+        slider (33.4, 34.4, "spread",  0, 2, value ("spread"), 0.85f);
+        slider (35.2, 36.2, "shimmer", 0, 5, value ("shimmer"), 0.6f);
+        slider (37.0, 38.2, "tilt",    1, 0, value ("tilt"), 0.6f);
+        slider (39.0, 40.2, "width",   1, 1, 0.0f, 1.0f);
+    } });
+    click (41.4, randomizeAt, [&] { rig.proc.randomizeTexture(); });
+    click (43.2, randomizeAt, [&] { rig.proc.randomizeTexture(); });
+    // 5. Back to the spectrum: re-freeze on a new chord (Em, struck at 44.7), mix up, release
+    click (44.4, spectrumTab, [&] { clickButton ("spectrum"); });
+    freezeClick (45.0, false);
+    freezeClick (45.6, true);
+    events.push_back ({ 46.6, [&] { knob (47.2, 48.2, "mix", mixAt, value ("mix"), 1.0f); } });
+    freezeClick (52.0, false);
+    moveAt (52.6, { 430, 330 }, 1.2);
+
+    std::sort (events.begin(), events.end(), [] (const Event& a, const Event& b) { return a.at < b.at; });
+
+    juce::File out (juce::File::getCurrentWorkingDirectory().getChildFile (dir));
+    out.deleteRecursively();
+    out.createDirectory();
+    juce::AudioBuffer<float> recording (2, 0);
+    int frame = 0;
+
+    for (int step = 0; now < total; ++step, now = step / fps)
+    {
+        for (size_t i = 0; i < events.size(); ++i)   // index loop: events may add more events
+            if (! events[i].done && now >= events[i].at) { events[i].done = true; auto fn = events[i].fn; fn(); }
+
+        for (auto& g : gestures)
+        {
+            if (g.ended || now < g.t0) continue;
+            g.fn ((float) ease ((now - g.t0) / (g.t1 - g.t0)));
+            cursorDown = now < g.t1;
+            if (now >= g.t1) g.ended = true;
+        }
+
+        if (moveEnd > moveStart && now >= moveStart && now <= moveEnd + 1.0 / fps)
+            cursor = moveFrom + (moveTo - moveFrom) * (float) ease ((now - moveStart) / (moveEnd - moveStart));
+
+        const auto block = rig.run (1.0 / fps, gen, t);
+        const int start = recording.getNumSamples();
+        recording.setSize (2, start + block.getNumSamples(), true, true);
+        for (int ch = 0; ch < 2; ++ch)
+            recording.copyFrom (ch, start, block, ch, 0, block.getNumSamples());
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+
+        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, captureScale);
+        {
+            juce::Graphics g (image);
+            g.addTransform (juce::AffineTransform::scale (captureScale));
+            juce::Path arrow;
+            arrow.startNewSubPath (0, 0);
+            arrow.lineTo (0, 17); arrow.lineTo (4.5f, 13); arrow.lineTo (7.5f, 19.5f);
+            arrow.lineTo (10, 18.5f); arrow.lineTo (7, 12); arrow.lineTo (12.5f, 12);
+            arrow.closeSubPath();
+            arrow.applyTransform (juce::AffineTransform::scale (cursorDown ? 0.92f : 1.0f).translated (cursor));
+            if (cursorDown)
+            {
+                g.setColour (juce::Colour (0xfff0c27a).withAlpha (0.35f));
+                g.fillEllipse (juce::Rectangle<float> (26, 26).withCentre (cursor));
+            }
+            g.setColour (juce::Colours::white);
+            g.fillPath (arrow);
+            g.setColour (juce::Colours::black);
+            g.strokePath (arrow, juce::PathStrokeType (1.2f));
+        }
+        juce::FileOutputStream os (out.getChildFile (juce::String (frame++).paddedLeft ('0', 4) + ".png"));
+        juce::PNGImageFormat().writeImageToStream (image, os);
+    }
+
+    const float peak = recording.getMagnitude (0, recording.getNumSamples());
+    if (peak > 0.0f) recording.applyGain (0.89f / peak);   // -1 dBFS
+    auto wavFile = out.getChildFile ("audio.wav");
+    std::unique_ptr<juce::OutputStream> stream (wavFile.createOutputStream().release());
+    juce::WavAudioFormat wav;
+    if (auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (sr).withNumChannels (2).withBitsPerSample (24)))
+        writer->writeFromAudioSampleBuffer (recording, 0, recording.getNumSamples());
+    std::printf ("wrote %d frames and audio.wav (%.1f s, peak was %.2f) to %s\n", frame,
+                 recording.getNumSamples() / sr, peak, out.getFullPathName().toRawUTF8());
+    editor = nullptr;
+    return 0;
+}
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -442,6 +642,8 @@ int main (int argc, char** argv)
         return demoFrames (argv[2], false);
     if (argc > 2 && juce::String (argv[1]) == "--demo-video")
         return demoFrames (argv[2], true);
+    if (argc > 2 && juce::String (argv[1]) == "--demo-showcase")
+        return demoShowcase (argv[2]);
 
     std::puts ("1. Unfrozen output is bit-identical to the input");
     {
@@ -590,6 +792,41 @@ int main (int argc, char** argv)
 
         check (proc.deleteUserPreset (saved) && proc.getNumPrograms() == factory, "delete removes it", proc.getNumPrograms());
         check (proc.saveUserPreset ("   ") == -1, "blank name refused", 0);
+    }
+
+    std::puts ("8. Every preset stays within 6 dB of Init's loudness");
+    {
+        auto loudness = [] (int program)
+        {
+            Rig rig (2);
+            Keys keys;
+            keys.notes.push_back ({ 73.42, 0.05, 0.2 });     // D2 bass
+            keys.notes.push_back ({ 146.83, 0.05, 0.2 });
+            keys.notes.push_back ({ 220.0, 0.06, 0.2 });
+            keys.notes.push_back ({ 277.18, 0.07, 0.2 });
+            keys.notes.push_back ({ 369.99, 0.08, 0.2 });
+            long t = 0;
+            auto gen = [&] (int, long n) { return keys (n); };
+            rig.proc.setCurrentProgram (program);
+            setParam (rig.proc, "mix", 1.0f);                 // pad only
+            rig.run (0.6, gen, t);
+            setParam (rig.proc, "freeze", 1.0f);
+            rig.run (3.0, gen, t);                            // past every preset's attack
+            const auto out = rig.run (2.0, gen, t);
+            double sum = 0.0;
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < out.getNumSamples(); ++i)
+                    sum += (double) out.getSample (ch, i) * out.getSample (ch, i);
+            return 10.0 * std::log10 (sum / (2.0 * out.getNumSamples()) + 1e-20);
+        };
+        const double reference = loudness (0);
+        SpectraProcessor names;
+        for (int i = 1; i < names.getNumFactoryPresets(); ++i)
+        {
+            const double diff = loudness (i) - reference;
+            const auto label = names.getProgramName (i) + ": dB relative to Init";
+            check (std::abs (diff) < 6.0, label.toRawUTF8(), diff);
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASSED" : "FAILURES", failures, failures == 1 ? "" : "s");

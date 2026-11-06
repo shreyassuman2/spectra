@@ -365,6 +365,9 @@ void SpectralEngine::absorbInto (Voice& v, float coeff) noexcept
 
 void SpectralEngine::remap (const float* srcMag, const float* srcFreq, float ratio, float gain) noexcept
 {
+    // Shifting down folds about 1/ratio source bins onto each target bin, and their magnitudes add up;
+    // shifting up spreads them out and leaves gaps. Compensate both so the level stays put.
+    gain *= ratio < 1.0f ? ratio : std::sqrt (ratio);
     for (int j = 1; j < numBins - 1; ++j)
     {
         const int k = static_cast<int> (static_cast<float> (j) * ratio + 0.5f);
@@ -483,11 +486,26 @@ void SpectralEngine::synthesiseVoice (int voiceIndex, const EngineParams& params
             mag = blurMag.data();
         }
 
-        // Tilt, phases, spectrum
+        // Tilt, loudness-matched: Tone changes the balance, not the level (limited to +-12 dB of correction).
+        float tiltNorm = 1.0f;
+        if (std::abs (currentTilt) > 1.0e-4f)
+        {
+            double before = 0.0, after = 0.0;
+            for (int k = 1; k < numBins - 1; ++k)
+            {
+                const double m = mag[k], mt = m * tiltGain[(size_t) k];
+                before += m * m;
+                after += mt * mt;
+            }
+            if (after > 1.0e-20)
+                tiltNorm = juce::jlimit (0.25f, 4.0f, static_cast<float> (std::sqrt (before / after)));
+        }
+
+        // Phases, spectrum
         float* ph = v.phase[(size_t) c].data();
         for (int k = 0; k < numBins; ++k)
         {
-            const float m = (k == 0 || k == numBins - 1) ? 0.0f : mag[k] * tiltGain[(size_t) k];
+            const float m = (k == 0 || k == numBins - 1) ? 0.0f : mag[k] * tiltGain[(size_t) k] * tiltNorm;
             finalMag[(size_t) k] = m;
 
             const float s = sharedNoise[(size_t) k];
