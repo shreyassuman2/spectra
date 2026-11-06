@@ -32,7 +32,7 @@ Click **freeze** to capture the last moment of sound, and click it again to rele
 ### Mac
 
 1. Download the `.pkg` file and double-click it.
-2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate(it's pretty expensive I believe 100 a year). Click **Done**.
+2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate(it costs 100/yr to get a certificate. the file is safe). Click **Done**.
 3. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Spectra.
 4. The installer opens. Click **Continue → Install**.
 
