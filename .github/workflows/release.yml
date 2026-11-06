@@ -1,0 +1,68 @@
+# Builds the Mac and Windows installers and attaches them to a GitHub Release.
+# To publish a release:  git tag v1.0.0 && git push origin v1.0.0
+# (Or run it by hand from the Actions tab to just build the installers without releasing.)
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build universal plugin and installer
+        run: packaging/mac/build-installer.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: dist/*.pkg
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build plugin
+        run: |
+          cmake -B build -G "Visual Studio 17 2022" -A x64 -DSPECTRA_COPY_PLUGIN=OFF
+          cmake --build build --config Release --target Spectra_VST3 --parallel
+      - name: Build installer and zip
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(Spectra VERSION ([0-9.]+)\)').Matches[0].Groups[1].Value
+          $plugin = "build\Spectra_artefacts\Release\VST3\Spectra.vst3"
+          if (-not (Test-Path $plugin)) { throw "Plugin not found at $plugin" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          choco install innosetup -y --no-progress
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DPluginDir=$PWD\$plugin" "/DOutputDir=$PWD\dist" packaging\windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+          Compress-Archive -Path $plugin -DestinationPath "dist\Spectra-$version-windows-vst3.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body: |
+            ## Download
+
+            - **Mac** (Apple Silicon and Intel, macOS 11+): the `-mac.pkg` file
+            - **Windows** (64-bit): the `-windows-setup.exe` file. The `.zip` is the bare plugin, for manual installs.
+
+            Spectra isn't signed with a paid Apple or Microsoft certificate yet, so your computer will warn you the first time. See [how to install](https://github.com/shreyassuman2/spectra#install) for the one-time steps.

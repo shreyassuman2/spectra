@@ -21,7 +21,12 @@ namespace
 
     juce::Font light (float size, float tracking = 0.0f)
     {
-        return juce::Font (juce::FontOptions ("Helvetica Neue", size, juce::Font::plain).withStyle ("Light").withKerningFactor (tracking));
+       #if JUCE_WINDOWS
+        const juce::String family { "Segoe UI" };
+       #else
+        const juce::String family { "Helvetica Neue" };
+       #endif
+        return juce::Font (juce::FontOptions (family, size, juce::Font::plain).withStyle ("Light").withKerningFactor (tracking));
     }
 
     float freqToNorm (float hz) { return std::log (hz / 20.0f) / std::log (1000.0f); }

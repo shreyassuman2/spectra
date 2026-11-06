@@ -2,7 +2,11 @@
 
 Spectral freeze / granular texture plugin. It captures a moment of sound and stretches it into a pad using the FFT.
 
-VST3 · built with [JUCE](https://juce.com) · macOS
+VST3 · Mac and Windows · built with [JUCE](https://juce.com)
+
+### [⬇ Download Spectra](https://github.com/shreyassuman2/spectra/releases/latest)
+
+Free. On the download page, pick the **`.pkg`** file for Mac or the **`setup.exe`** file for Windows. Then follow the [install steps](#install).
 
 ![Spectra demo: a chord plays, freeze is clicked, and the pad holds while the input changes. Diffuse, shift and size are swept, then spread and shimmer on the settings page, and the pad is released.](docs/demo.gif)
 
@@ -24,6 +28,29 @@ A screen on the left shows the live spectrum and the captured slice. To its righ
 
 Click **freeze** to capture the last moment of sound, and click it again to release. While unfrozen, audio passes through untouched.
 
+## Install
+
+### Mac
+
+1. Download the `.pkg` file and double-click it.
+2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate. Click **Done**.
+3. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Spectra. Enter your password if asked.
+4. The installer opens. Click **Continue → Install**.
+
+You only need to do this once. Spectra works on Apple Silicon and Intel Macs running macOS 11 or later.
+
+### Windows
+
+1. Download the `setup.exe` file and double-click it.
+2. If Windows shows *"Windows protected your PC"*, click **More info → Run anyway**. Spectra isn't signed with a paid certificate, which is why that appears.
+3. Click through the installer. It puts Spectra in `C:\Program Files\Common Files\VST3`.
+
+To remove it later, use **Settings → Apps → Spectra (VST3) → Uninstall**.
+
+### Open it in FL Studio
+
+Go to **Options → Manage plugins**, click **Find plugins**, and Spectra shows up under effects. Add it to a mixer track like any other effect. Other DAWs that support VST3 (Ableton Live, Reaper, Bitwig, Studio One) find it on their next plugin scan.
+
 ## Build
 
 Requires JUCE (default path `~/JUCE`) and CMake.
@@ -33,7 +60,17 @@ cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release   # add -DJUCE_DIR
 cmake --build build -j8
 ```
 
-The VST3 is copied to `~/Library/Audio/Plug-Ins/VST3/Spectra.vst3` after building.
+The VST3 is copied to `~/Library/Audio/Plug-Ins/VST3/Spectra.vst3` after building. If JUCE isn't found at `JUCE_DIR`, CMake downloads JUCE 9.0.1 automatically.
+
+### Releases
+
+`packaging/mac/build-installer.sh` builds a universal Mac installer into `dist/`. To publish a release with both the Mac and Windows installers, bump `VERSION` in `CMakeLists.txt`, then push a tag:
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+GitHub Actions (`.github/workflows/release.yml`) builds both installers and attaches them to a new GitHub Release.
 
 ## Tests
 

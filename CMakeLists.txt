@@ -6,9 +6,22 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
-# Point this at your JUCE checkout:  cmake -DJUCE_DIR=/path/to/JUCE ..
+# Uses a local JUCE checkout if there is one (cmake -DJUCE_DIR=/path/to/JUCE),
+# otherwise downloads JUCE 9.0.1 (this is what the release builds on GitHub do).
 set(JUCE_DIR "$ENV{HOME}/JUCE" CACHE PATH "Path to JUCE")
-add_subdirectory(${JUCE_DIR} ${CMAKE_BINARY_DIR}/JUCE)
+if (EXISTS "${JUCE_DIR}/CMakeLists.txt")
+    add_subdirectory(${JUCE_DIR} ${CMAKE_BINARY_DIR}/JUCE)
+else()
+    include(FetchContent)
+    FetchContent_Declare(JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG        9.0.1
+        GIT_SHALLOW    TRUE)
+    FetchContent_MakeAvailable(JUCE)
+endif()
+
+# Release builds turn this off so the build machine doesn't install the plugin into its own system folders.
+option(SPECTRA_COPY_PLUGIN "Copy the VST3 into the system plug-in folder after building" ON)
 
 juce_add_plugin(Spectra
     COMPANY_NAME                "Shreyas"
@@ -22,7 +35,7 @@ juce_add_plugin(Spectra
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD     TRUE
+    COPY_PLUGIN_AFTER_BUILD     ${SPECTRA_COPY_PLUGIN}
     AU_MAIN_TYPE                kAudioUnitType_Effect
     VST3_CATEGORIES             Fx Spatial Reverb)
 
