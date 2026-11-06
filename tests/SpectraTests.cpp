@@ -1,5 +1,6 @@
 // Offline checks for Spectra's DSP. Build: cmake --build build --target SpectraTests
 #include "../Source/PluginProcessor.h"
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <chrono>
 #include <cstdio>
 
@@ -238,24 +239,58 @@ static int snapshot (const char* path)
     return 0;
 }
 
-/** Scripted session for the README GIF: renders numbered PNG frames (15 fps) into `dir`. */
-static int demoFrames (const char* dir)
+/** Soft electric-piano notes: a few harmonics, quick attack, upper harmonics fading first. */
+struct Keys
+{
+    struct Note { double freq, start, gain; };
+    std::vector<Note> notes;
+
+    void chord (std::initializer_list<double> freqs, double start, double gain, double strum)
+    {
+        double at = start;
+        for (auto f : freqs) { notes.push_back ({ f, at, gain }); at += strum; }
+    }
+
+    float operator() (long n) const
+    {
+        const double time = (double) n / sr;
+        double sum = 0.0;
+        for (const auto& note : notes)
+        {
+            const double tt = time - note.start;
+            if (tt < 0.0 || tt > 6.0) continue;
+            const double env = (1.0 - std::exp (-tt / 0.004)) * std::exp (-tt * 0.9);
+            for (int k = 1; k <= 6; ++k)
+                sum += note.gain * env * std::exp (-tt * 0.7 * (k - 1)) / std::pow ((double) k, 1.6)
+                       * std::sin (juce::MathConstants<double>::twoPi * note.freq * k * tt + k * 0.7);
+        }
+        return (float) sum;
+    }
+};
+
+/** Scripted session for the README demo. Renders numbered PNG frames into `dir`: 15 fps at 1x
+    for the GIF, or with `video` 30 fps at 2x plus the plugin's audio output as `dir/audio.wav`. */
+static int demoFrames (const char* dir, bool video)
 {
     using P = juce::Point<float>;
     Rig rig (2);
-    juce::Random r (9);
     long t = 0;
 
-    // Chord A before the freeze, chord B after, so you can see the pad hold while the input changes.
+    // Chord A (Gmaj7) rings into the freeze; afterwards the input keeps changing (Em9, Dmaj7)
+    // while the pad holds chord A. No new notes after 11 s, so the release is heard on its own.
     double now = 0.0;
-    auto gen = [&] (int, long n)
+    Keys keys;
+    const double g2 = 98.0, g3 = 196.0, b3 = 246.94, d4 = 293.66, fs4 = 369.99;
+    keys.chord ({ g2, g3, b3, d4, fs4 }, 0.10, 0.20, 0.11);
+    keys.chord ({ g2, g3, b3, d4, fs4 }, 1.30, 0.20, 0.02);
+    for (int i = 0; i < 4; ++i)
     {
-        const bool chordB = now > 2.6;
-        const double env = 0.65 + 0.35 * std::sin ((double) n / sr * 2.3);
-        const float a = chordB ? (sine (293.7, n, 0.22f) + sine (370.0, n, 0.18f) + sine (440.0, n, 0.16f) + sine (2349.0, n, 0.02f))
-                               : (sine (196.0, n, 0.25f) + sine (246.9, n, 0.2f) + sine (293.7, n, 0.18f) + sine (1568.0, n, 0.03f));
-        return (float) env * a + (r.nextFloat() - 0.5f) * 0.01f;
-    };
+        const double at = 2.7 + i * 2.0;
+        if (i % 2 == 0) keys.chord ({ 82.41, 164.81, 246.94, 293.66, 369.99 }, at, 0.13, 0.09);   // Em9
+        else            keys.chord ({ 73.42, 146.83, 220.0, 277.18, 369.99 }, at, 0.13, 0.09);    // Dmaj7
+    }
+    auto gen = [&] (int, long n) { return keys (n); };
+    juce::AudioBuffer<float> recording (2, 0);
 
     std::unique_ptr<juce::AudioProcessorEditor> editor (rig.proc.createEditorAndMakeActive());
     editor->setVisible (true);
@@ -289,7 +324,8 @@ static int demoFrames (const char* dir)
     out.deleteRecursively();
     out.createDirectory();
 
-    const double fps = 30.0, total = 14.2;
+    const double fps = 30.0, total = video ? 15.0 : 14.2;
+    const float captureScale = video ? 2.0f : 1.0f;
     int frame = 0;
     P moveFrom = cursor;
     double moveStart = 0.0, moveEnd = 0.0;
@@ -335,14 +371,22 @@ static int demoFrames (const char* dir)
             cursor = lerpP (moveFrom, moveTo, (float) ease ((now - moveStart) / (moveEnd - moveStart)));
 
         // Audio + UI time ------------------------------------------------------
-        rig.run (1.0 / fps, gen, t);
+        const auto block = rig.run (1.0 / fps, gen, t);
+        if (video)
+        {
+            const int start = recording.getNumSamples();
+            recording.setSize (2, start + block.getNumSamples(), true, true);
+            for (int ch = 0; ch < 2; ++ch)
+                recording.copyFrom (ch, start, block, ch, 0, block.getNumSamples());
+        }
         juce::MessageManager::getInstance()->runDispatchLoopUntil (32);
 
-        if (step % 2 != 0) continue;   // 15 fps capture
+        if (! video && step % 2 != 0) continue;   // 15 fps capture for the GIF
 
-        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
+        auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, captureScale);
         {
             juce::Graphics g (image);
+            g.addTransform (juce::AffineTransform::scale (captureScale));
             juce::Path arrow;   // classic pointer
             arrow.startNewSubPath (0, 0);
             arrow.lineTo (0, 17); arrow.lineTo (4.5f, 13); arrow.lineTo (7.5f, 19.5f);
@@ -365,6 +409,21 @@ static int demoFrames (const char* dir)
     }
 
     std::printf ("wrote %d frames to %s\n", frame, out.getFullPathName().toRawUTF8());
+
+    if (video)
+    {
+        const float peak = recording.getMagnitude (0, recording.getNumSamples());
+        if (peak > 0.0f) recording.applyGain (0.89f / peak);   // normalise to -1 dBFS
+        auto wavFile = out.getChildFile ("audio.wav");
+        std::unique_ptr<juce::OutputStream> stream (wavFile.createOutputStream().release());
+        juce::WavAudioFormat wav;
+        if (auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (sr)
+                                                                                      .withNumChannels (2)
+                                                                                      .withBitsPerSample (24)))
+            writer->writeFromAudioSampleBuffer (recording, 0, recording.getNumSamples());
+        std::printf ("wrote %s (%.1f s, peak was %.2f)\n", wavFile.getFullPathName().toRawUTF8(),
+                     recording.getNumSamples() / sr, peak);
+    }
     editor = nullptr;
     return 0;
 }
@@ -380,7 +439,9 @@ int main (int argc, char** argv)
     if (argc > 2 && juce::String (argv[1]) == "--snapshot")
         return snapshot (argv[2]);
     if (argc > 2 && juce::String (argv[1]) == "--demo-frames")
-        return demoFrames (argv[2]);
+        return demoFrames (argv[2], false);
+    if (argc > 2 && juce::String (argv[1]) == "--demo-video")
+        return demoFrames (argv[2], true);
 
     std::puts ("1. Unfrozen output is bit-identical to the input");
     {
