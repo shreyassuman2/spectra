@@ -9,7 +9,7 @@ VST3 and Audio Unit · Mac and Windows · built with [JUCE](https://juce.com)
  On the download page, pick the **`.pkg`** file for Mac or the **`setup.exe`** file for Windows. Then follow the [install steps](#install).
 
 ![Spectra demo: a chord plays, freeze is clicked, and the pad holds while the input changes. Diffuse, shift and size are swept, then spread and shimmer on the settings page, and the pad is released.](docs/demo.gif)
-With sound:
+With sound: https://github.com/user-attachments/assets/3931d312-fbc3-4388-9663-94cebb32d09a
 Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 
 ## Controls
