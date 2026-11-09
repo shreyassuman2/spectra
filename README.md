@@ -7,8 +7,6 @@ VST3 and Audio Unit · Mac and Windows · built with [JUCE](https://juce.com)
 
 ### [Download Spectra](https://github.com/shreyassuman2/spectra/releases/latest)
 
- On the download page, pick the **`.pkg`** file for Mac or the **`setup.exe`** file for Windows. Then follow the [install steps](#install).
-
 ## Demo: 
 
 https://github.com/user-attachments/assets/11d4fc5e-46c1-4822-8bb2-39ed0001dfb2
