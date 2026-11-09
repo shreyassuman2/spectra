@@ -48,7 +48,9 @@ To remove it later, use **Settings → Apps → Spectra (VST3) → Uninstall**.
 
 ### Open it in FL Studio
 
-Go to **Options → Manage plugins**, click **Find plugins**, and Spectra shows up under effects. Add it to a mixer track like any other effect. Other DAWs that support VST3 (Ableton Live, Reaper, Bitwig, Studio One) find it on their next plugin scan.
+Go to **Options → Manage plugins** and click **Find plugins**. When the scan finishes, find Spectra in the list and click the **star** next to it — FL only shows starred plugins in the effect menu, so without this step Spectra is installed but stays hidden. You can then add it to a mixer track like any other effect.
+
+Other DAWs that support VST3 (Ableton Live, Reaper, Bitwig, Studio One) find it on their next plugin scan, with no extra step.
 
 On a Mac, the installer also adds an Audio Unit version for Logic Pro and GarageBand. Find it under **Audio Units → Shreyas → Spectra**.
 
