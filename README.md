@@ -15,18 +15,6 @@ https://github.com/user-attachments/assets/11d4fc5e-46c1-4822-8bb2-39ed0001dfb2
 
 Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 
-## Controls
-
-| Section | Controls |
-|---|---|
-| Capture | **Size** (20 ms–2 s slice), **Absorb** (blend live input into the frozen pad) |
-| Texture | **Scan**, **Drift** (random wander), **Spread** (grain jitter), **Diffuse** (tonal → wash) |
-| Tone | **Blur**, **Shift** (±24 st), **Shimmer** (+1 oct), **Tone** (dark ↔ bright tilt), **Width** |
-| Envelope | **Attack** (10 ms–5 s), **Release** (10 ms–10 s) |
-| Output | **Mix** (how much the pad replaces the dry signal while frozen), **Level** |
-
-Click **freeze** to capture the last moment of sound, and click it again to release. While unfrozen, audio passes through untouched.
-
 ## Install
 
 ### Mac
@@ -48,13 +36,11 @@ To remove it, use **Settings → Apps → Spectra (VST3) → Uninstall**. If you
 
 ### Open it in your DAW
 
-**FL Studio:** go to **Options → Manage plugins** and click **Find plugins**, then click the **star** next to Spectra — FL keeps unstarred plugins out of the effect menu, so it stays hidden until you do.
+**FL Studio:** go to **Options → Manage plugins** and click **Find plugins**, then **star** Spectra. Search for it in More Plugins afterwards.
 
 Ableton Live, Reaper, Bitwig, and Studio One pick it up on their next plugin scan.
 
-### Your own presets
 
-On the **presets** page, click **save as...**, type a name, and press Enter. To delete one, right-click it. Presets are saved as small files in `~/Library/Audio/Presets/Shreyas/Spectra` on Mac and `%APPDATA%\Shreyas\Spectra\Presets` on Windows, so you can back them up or share them.
 
 ## Build
 
