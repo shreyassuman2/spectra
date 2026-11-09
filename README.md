@@ -19,28 +19,26 @@ Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 
 ### Mac
 
-1. Download the `.pkg` and double-click it.
-2. macOS says it *can't verify* Spectra — it isn't signed with a paid Apple certificate ($100/yr). Click **Done**.
-3. In **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
-4. Click **Continue → Install**.
+1. Download the `.pkg` file and double-click it.
+2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate(it costs 100/yr to get a certificate. the file is safe). Click **Done**.
+3. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Spectra.
+4. The installer opens. Click **Continue → Install**.
 
-Works on Apple Silicon and Intel Macs, macOS 11 or later. Installs the VST3 plus an Audio Unit for Logic Pro and GarageBand, under **Audio Units → Shreyas → Spectra**.
+Spectra works on Apple Silicon and Intel Macs running macOS 11 or later.
 
 ### Windows
 
-1. Download the `setup.exe` and double-click it.
-2. If you see *"Windows protected your PC"*, click **More info → Run anyway** — unsigned, same reason as Mac.
-3. Click through. Spectra lands in `C:\Program Files\Common Files\VST3`.
+1. Download the `setup.exe` file and double-click it.
+2. If Windows shows *"Windows protected your PC"*, click **More info → Run anyway**. Spectra isn't signed w/ a paid certificate(same reason as mac), which is why that appears.
+3. Click through the installer. It puts Spectra in `C:\Program Files\Common Files\VST3`.
 
-To remove it, use **Settings → Apps → Spectra (VST3) → Uninstall**. If you used the `.zip` instead, delete `Spectra.vst3` from that folder.
+To remove it later, use **Settings → Apps → Spectra (VST3) → Uninstall**.
 
 ### Open it in your DAW
 
 **FL Studio:** go to **Options → Manage plugins** and click **Find plugins**, then **star** Spectra. Search for it in More Plugins afterwards.
 
 Ableton Live, Reaper, Bitwig, and Studio One pick it up on their next plugin scan.
-
-
 
 ## Build
 
