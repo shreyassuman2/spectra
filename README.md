@@ -31,28 +31,26 @@ Click **freeze** to capture the last moment of sound, and click it again to rele
 
 ### Mac
 
-1. Download the `.pkg` file and double-click it.
-2. macOS will say it *can't verify* Spectra. This is because Spectra isn't signed with a paid Apple developer certificate(it costs 100/yr to get a certificate. the file is safe). Click **Done**.
-3. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to the message about Spectra.
-4. The installer opens. Click **Continue → Install**.
+1. Download the `.pkg` and double-click it.
+2. macOS says it *can't verify* Spectra — it isn't signed with a paid Apple certificate ($100/yr). Click **Done**.
+3. In **System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
+4. Click **Continue → Install**.
 
-Spectra works on Apple Silicon and Intel Macs running macOS 11 or later.
+Works on Apple Silicon and Intel Macs, macOS 11 or later. Installs the VST3 plus an Audio Unit for Logic Pro and GarageBand, under **Audio Units → Shreyas → Spectra**.
 
 ### Windows
 
-1. Download the `setup.exe` file and double-click it.
-2. If Windows shows *"Windows protected your PC"*, click **More info → Run anyway**. Spectra isn't signed w/ a paid certificate(same reason as mac), which is why that appears.
-3. Click through the installer. It puts Spectra in `C:\Program Files\Common Files\VST3`.
+1. Download the `setup.exe` and double-click it.
+2. If you see *"Windows protected your PC"*, click **More info → Run anyway** — unsigned, same reason as Mac.
+3. Click through. Spectra lands in `C:\Program Files\Common Files\VST3`.
 
-To remove it later, use **Settings → Apps → Spectra (VST3) → Uninstall**.
+To remove it, use **Settings → Apps → Spectra (VST3) → Uninstall**. If you used the `.zip` instead, delete `Spectra.vst3` from that folder.
 
-### Open it in FL Studio
+### Open it in your DAW
 
-Go to **Options → Manage plugins** and click **Find plugins**. When the scan finishes, find Spectra in the list and click the **star** next to it — FL only shows starred plugins in the effect menu, so without this step Spectra is installed but stays hidden. You can then add it to a mixer track like any other effect.
+**FL Studio:** go to **Options → Manage plugins** and click **Find plugins**, then click the **star** next to Spectra — FL keeps unstarred plugins out of the effect menu, so it stays hidden until you do.
 
-Other DAWs that support VST3 (Ableton Live, Reaper, Bitwig, Studio One) find it on their next plugin scan, with no extra step.
-
-On a Mac, the installer also adds an Audio Unit version for Logic Pro and GarageBand. Find it under **Audio Units → Shreyas → Spectra**.
+Ableton Live, Reaper, Bitwig, and Studio One pick it up on their next plugin scan.
 
 ### Your own presets
 
