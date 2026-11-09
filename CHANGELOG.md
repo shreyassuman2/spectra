@@ -2,6 +2,10 @@
 
 Each release's notes on GitHub are taken from its section here.
 
+## 1.0.4
+
+- **Fixed Spectra not loading on some Windows computers.** The plugin needed Microsoft's Visual C++ files to be already installed, and on computers without them it failed to load without saying anything — it installed fine but never appeared in the plugin list. Everything it needs is now built in.
+
 ## 1.0.3
 
 - **Fixed a loud jump on Sub Drone.** Shifting the pitch down made the pad much louder (about 16 dB on Sub Drone), and shifting up made it quieter. Shift now keeps the level steady.

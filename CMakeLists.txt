@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(Spectra VERSION 1.0.3)
+project(Spectra VERSION 1.0.4)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Statically link the MSVC runtime so the Windows plugin doesn't need the
+# Visual C++ redistributable installed. Without this the VST3 fails to load
+# silently on machines that don't have it, and the host just skips the plugin.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 # Uses a local JUCE checkout if there is one (cmake -DJUCE_DIR=/path/to/JUCE),
