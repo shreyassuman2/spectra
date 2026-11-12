@@ -9,7 +9,9 @@ VST3 and Audio Unit · Mac and Windows · built with [JUCE](https://juce.com)
 
 ## Demo: 
 
-https://github.com/user-attachments/assets/11d4fc5e-46c1-4822-8bb2-39ed0001dfb2
+
+https://github.com/user-attachments/assets/24d2cd47-1c9d-46fe-b2a3-5e929b1b0510
+
 
 Design spec: [`.plans/spectra-spec.md`](.plans/spectra-spec.md).
 
