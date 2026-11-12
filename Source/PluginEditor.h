@@ -63,12 +63,26 @@ public:
 };
 
 //==============================================================================
+/** Slider that, while dragged, snaps to multiples of `snapStep` (0 = off). Holding Shift drags freely. */
+class SnappingSlider final : public juce::Slider
+{
+public:
+    double snapStep = 0.0;
+    double snapValue (double attempted, DragMode mode) override
+    {
+        if (snapStep <= 0.0 || mode == notDragging || juce::ModifierKeys::currentModifiers.isShiftDown())
+            return attempted;
+        return std::round (attempted / snapStep) * snapStep;
+    }
+};
+
 /** Slider + parameter attachment with double-click reset and Shift for fine control. */
 struct BoundSlider
 {
     BoundSlider (juce::AudioProcessorValueTreeState&, const juce::String& paramId,
                  juce::Slider::SliderStyle, const juce::String& tooltip, bool bipolar);
-    mutable juce::Slider slider;
+    mutable SnappingSlider slider;
+    juce::RangedAudioParameter* param = nullptr;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     juce::String valueText() const { return slider.getTextFromValue (slider.getValue()); }
 };
@@ -81,10 +95,15 @@ public:
           const juce::String& tooltip, bool bipolar = false);
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+    /** Pitch knob: snap to semitones, name the interval, and click the value for a menu of intervals. */
+    void makePitchKnob();
 
 private:
     BoundSlider bound;
     juce::String label;
+    bool pitch = false;
 };
 
 /** Settings-page row: name and value on one line, a thin slider underneath. */
@@ -111,6 +130,21 @@ public:
 
 private:
     Smoothed on, press;
+};
+
+/** "re-freeze" and a note value under the freeze orb. Click for the menu. */
+class RefreezeSelector final : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    explicit RefreezeSelector (juce::RangedAudioParameter&);
+    void paint (juce::Graphics&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override { repaint(); }
+    void mouseExit (const juce::MouseEvent&) override  { repaint(); }
+
+private:
+    juce::ParameterAttachment attachment;
+    int index = 0;
 };
 
 /** Lowercase text button; gold on hover, optionally marked as selected. */
@@ -279,6 +313,7 @@ private:
     PresetNav presetNav;
     Screen screen;
     FreezeButton freeze;
+    RefreezeSelector refreeze;
     std::vector<std::unique_ptr<Knob>> knobs;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> freezeAttachment;
     TextLink scaleButton { "100%" };

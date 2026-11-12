@@ -134,6 +134,7 @@ void SpectralEngine::reset()
         voices[(size_t) v].bank = v + 1;
         voices[(size_t) v].env  = 0.0f;
         voices[(size_t) v].gate = false;
+        voices[(size_t) v].releaseCapMs = 0.0f;
     }
     hopCounter = 0;
     wasFrozen = false;
@@ -156,8 +157,11 @@ void SpectralEngine::process (const float* const* input, float* const* wetOutput
 {
     if (params.freeze && ! wasFrozen)
         startVoice (params);
+    else if (params.freeze && params.retrigger && banks[(size_t) liveBank].count >= 2)   // need new material to capture
+        startVoice (params);
     else if (! params.freeze && wasFrozen)
-        for (auto& v : voices) v.gate = false;
+        for (auto& v : voices)
+            if (v.gate) { v.gate = false; v.releaseCapMs = 0.0f; }
 
     wasFrozen = params.freeze;
     visuals.frozen.store (params.freeze);
@@ -224,10 +228,12 @@ void SpectralEngine::processFrame (const EngineParams& params) noexcept
 
     // 3. Envelopes -------------------------------------------------------------
     const float attackStep  = hopSeconds / std::max (0.001f, params.attackMs  * 0.001f);
-    const float releaseStep = hopSeconds / std::max (0.001f, params.releaseMs * 0.001f);
     for (auto& v : voices)
+    {
+        const float releaseMs = v.releaseCapMs > 0.0f ? std::min (params.releaseMs, v.releaseCapMs) : params.releaseMs;
         v.env = v.gate ? std::min (1.0f, v.env + attackStep)
-                       : std::max (0.0f, v.env - releaseStep);
+                       : std::max (0.0f, v.env - hopSeconds / std::max (0.001f, releaseMs * 0.001f));
+    }
 
     // The primary voice drives the visuals: the gated one, else the loudest.
     primaryVoice = -1;
@@ -312,9 +318,19 @@ void SpectralEngine::startVoice (const EngineParams& params) noexcept
             if (voices[(size_t) v].env < voices[(size_t) vi].env) vi = v;
     }
 
-    for (auto& v : voices) v.gate = false;   // everything else crossfades out
+    // The capture that is still sounding, if any: the new one continues its phases.
+    int outgoing = -1;
+    for (int v = 0; v < numVoices; ++v)
+        if (v != vi && voices[(size_t) v].gate && voices[(size_t) v].env > 0.0f) outgoing = v;
+
+    // Everything else crossfades out. On the re-freeze grid the outgoing capture fades within the
+    // limit, so with three voices the one stolen next is already silent.
+    const float cap = params.retrigger ? std::max (0.0f, params.retriggerReleaseMs) : 0.0f;
+    for (auto& v : voices)
+        if (v.gate) { v.gate = false; v.releaseCapMs = cap; }
 
     Voice& voice = voices[(size_t) vi];
+    voice.releaseCapMs = 0.0f;
     std::swap (voice.bank, liveBank);         // the live history becomes this voice's slice
     banks[(size_t) liveBank].writeIndex = 0;
     banks[(size_t) liveBank].count = 0;
@@ -325,14 +341,24 @@ void SpectralEngine::startVoice (const EngineParams& params) noexcept
     voice.driftTarget = 0.0f;
     voice.driftTimer = 0;
 
-    for (int k = 0; k < numBins; ++k)
-        sharedNoise[(size_t) k] = rng.next();
-    for (int ch = 0; ch < numOut; ++ch)
+    if (outgoing >= 0)
+    {
+        // Same phases as the capture fading out: when both hold similar sound (a held note re-captured
+        // on the grid) they add up instead of partly cancelling, so the crossfade has no dip.
+        for (int ch = 0; ch < numOut; ++ch)
+            voice.phase[(size_t) ch] = voices[(size_t) outgoing].phase[(size_t) ch];   // same size: no allocation
+    }
+    else
+    {
         for (int k = 0; k < numBins; ++k)
-        {
-            const float s = sharedNoise[(size_t) k];
-            voice.phase[(size_t) ch][(size_t) k] = twoPi * (s + params.width * (rng.next() - s));
-        }
+            sharedNoise[(size_t) k] = rng.next();
+        for (int ch = 0; ch < numOut; ++ch)
+            for (int k = 0; k < numBins; ++k)
+            {
+                const float s = sharedNoise[(size_t) k];
+                voice.phase[(size_t) ch][(size_t) k] = twoPi * (s + params.width * (rng.next() - s));
+            }
+    }
 
     primaryVoice = vi;
     framesSinceThumb = 0;

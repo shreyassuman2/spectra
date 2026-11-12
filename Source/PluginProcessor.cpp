@@ -25,7 +25,8 @@ namespace
     {
         const float r = std::round (v * 10.0f) / 10.0f;
         if (std::abs (r) < 0.05f) return "0 st";
-        return (r > 0.0f ? "+" : "") + juce::String (r, 1) + " st";
+        const bool whole = std::abs (r - std::round (r)) < 0.05f;   // "+7 st", but "+7.3 st" when tuned finely
+        return (r > 0.0f ? "+" : "") + (whole ? juce::String (juce::roundToInt (r)) : juce::String (r, 1)) + " st";
     }
 
     juce::String tiltText (float v, int)
@@ -74,6 +75,7 @@ SpectraProcessor::SpectraProcessor()
 {
     auto get = [this] (const char* id) { return apvts.getRawParameterValue (id); };
     p.freeze  = get ("freeze");
+    p.refreeze = get ("refreeze");
     p.size    = get ("size");
     p.scan    = get ("scan");
     p.drift   = get ("drift");
@@ -133,6 +135,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout SpectraProcessor::createLayo
         juce::AudioParameterFloatAttributes().withStringFromValueFunction (dbText)
                                              .withValueFromStringFunction (numberValue)
                                              .withLabel ("dB")));
+
+    // Added in 1.1. Version hint 2 so AU hosts keep the existing parameters' order.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        juce::ParameterID { "refreeze", 2 }, "Re-freeze", refreezeChoices(), 0));
     return layout;
 }
 
@@ -165,7 +171,51 @@ void SpectraProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     levelSmoothed.reset (sampleRate, 0.05);
     mixSmoothed.setCurrentAndTargetValue (p.mix->load());
     levelSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (p.level->load()));
+    lastTriggerPpq = -1.0e9;
     setLatencySamples (0);
+}
+
+int SpectraProcessor::findRefreezeTriggers (int numSamples, Trigger* out, int maxTriggers)
+{
+    const int choice = juce::roundToInt (p.refreeze->load());
+    if (choice <= 0 || p.freeze->load() < 0.5f)
+        return 0;
+
+    auto* playHead = getPlayHead();
+    if (playHead == nullptr) return 0;
+    const auto pos = playHead->getPosition();
+    if (! pos.hasValue() || ! pos->getIsPlaying()) return 0;   // the grid follows the song: stopped means hold
+    const auto ppq = pos->getPpqPosition();
+    const auto bpm = pos->getBpm();
+    if (! ppq.hasValue() || ! bpm.hasValue() || *bpm <= 0.0) return 0;
+
+    double barBeats = 4.0;
+    if (const auto sig = pos->getTimeSignature(); sig.hasValue() && sig->numerator > 0 && sig->denominator > 0)
+        barBeats = sig->numerator * 4.0 / sig->denominator;
+
+    const double step = choice == 1 ? barBeats : 2.0 / (double) (1 << (choice - 2));   // in quarter notes
+    const double origin = pos->getPpqPositionOfLastBarStart().orFallback (0.0);
+    const double beatsPerSample = *bpm / 60.0 / getSampleRate();
+    const double start = *ppq;
+
+    if (start + step * 0.5 < lastTriggerPpq)   // looped or jumped back
+        lastTriggerPpq = -1.0e9;
+
+    // Start one sample early: a grid line that fell between the last block's final sample and
+    // this one belongs here. The check against lastTriggerPpq stops it firing twice.
+    double line = origin + std::ceil ((start - beatsPerSample - origin) / step) * step;
+    const float releaseCapMs = (float) (1.5 * step * 60000.0 / *bpm);
+
+    int count = 0;
+    for (; count < maxTriggers; line += step)
+    {
+        const int sample = (int) std::floor ((line - start) / beatsPerSample);
+        if (sample >= numSamples) break;
+        if (line <= lastTriggerPpq + step * 0.5) continue;
+        out[count++] = { std::max (0, sample), releaseCapMs };
+        lastTriggerPpq = line;
+    }
+    return count;
 }
 
 void SpectraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -202,9 +252,23 @@ void SpectraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const float halfPi = juce::MathConstants<float>::halfPi;
     const int maxChunk = std::min (wetBuffer.getNumSamples(), (int) duckBuffer.size());
 
-    for (int offset = 0; offset < numSamples; offset += maxChunk)
+    // Split the block at each re-freeze grid line so the capture lands on the right sample.
+    constexpr int maxTriggers = 16;
+    Trigger triggers[maxTriggers];
+    const int numTriggers = findRefreezeTriggers (numSamples, triggers, maxTriggers);
+    int nextTrigger = 0;
+
+    for (int offset = 0, n = 0; offset < numSamples; offset += n)
     {
-        const int n = std::min (maxChunk, numSamples - offset);
+        ep.retrigger = false;
+        while (nextTrigger < numTriggers && triggers[nextTrigger].sample <= offset)
+        {
+            ep.retrigger = true;
+            ep.retriggerReleaseMs = triggers[nextTrigger++].releaseCapMs;
+        }
+        n = std::min (maxChunk, numSamples - offset);
+        if (nextTrigger < numTriggers)
+            n = std::min (n, triggers[nextTrigger].sample - offset);
 
         const float* inputs[2] = { buffer.getReadPointer (0, offset),
                                    buffer.getReadPointer (std::min (1, numIn - 1), offset) };
@@ -304,7 +368,7 @@ int SpectraProcessor::saveUserPreset (const juce::String& rawName)
     xml.setAttribute ("name", name);
     xml.setAttribute ("format", 1);
     for (auto* param : getParameters())
-        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param); ranged != nullptr && ranged->getParameterID() != "freeze")
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param); ranged != nullptr && ! isPerformanceParam (ranged->getParameterID()))
         {
             auto* e = xml.createNewChildElement ("PARAM");
             e->setAttribute ("id", ranged->getParameterID());
@@ -339,7 +403,7 @@ void SpectraProcessor::applyPresetFile (const juce::File& file)
 {
     if (auto xml = juce::XmlDocument::parse (file))
         for (auto* e : xml->getChildWithTagNameIterator ("PARAM"))
-            if (const auto id = e->getStringAttribute ("id"); id.isNotEmpty() && id != "freeze")
+            if (const auto id = e->getStringAttribute ("id"); id.isNotEmpty() && ! isPerformanceParam (id))
                 setParam (id, e->getDoubleAttribute ("value"));
 }
 
@@ -373,7 +437,7 @@ void SpectraProcessor::setCurrentProgram (int index)
     setParam ("width", pr.width);     setParam ("attack", pr.attack);
     setParam ("release", pr.release); setParam ("mix", pr.mix);
     setParam ("level", pr.level);
-    // "freeze" is intentionally untouched.
+    // "freeze" and "refreeze" are intentionally untouched.
 }
 
 void SpectraProcessor::randomizeTexture()

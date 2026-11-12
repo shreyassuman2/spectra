@@ -26,6 +26,11 @@ struct EngineParams
     float width      = 0.6f;
     float attackMs   = 400.0f;
     float releaseMs  = 1500.0f;
+
+    /** Capture a new moment now even though Freeze is already on (the re-freeze grid). */
+    bool  retrigger  = false;
+    /** On a retrigger, the outgoing capture fades over min(releaseMs, this). 0 = no limit. */
+    float retriggerReleaseMs = 0.0f;
 };
 
 /** Written by the audio thread, read by the GUI. Lock-free (atomics only). */
@@ -34,7 +39,7 @@ struct VisualState
     static constexpr int numBands  = 128;
     static constexpr int thumbCols = 128;
     static constexpr int thumbRows = 48;
-    static constexpr int numVoices = 2;
+    static constexpr int numVoices = 3;   // one sounding, two fading out (re-freeze overlaps)
 
     VisualState();
 
@@ -127,6 +132,7 @@ private:
         int   bank = -1;
         float env = 0.0f;
         bool  gate = false;
+        float releaseCapMs = 0.0f;   // set when a retrigger releases this voice; 0 = use the Release knob
         std::array<std::vector<float>, maxChannels> phase;
         float driftPos = 0.0f, driftTarget = 0.0f;
         int   driftTimer = 0;

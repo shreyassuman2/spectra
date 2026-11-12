@@ -22,14 +22,37 @@ namespace
         param->setValueNotifyingHost (param->convertTo0to1 (plain));
     }
 
+    /** A host transport that plays from 0 at a fixed tempo in 4/4, following the rig's sample counter. */
+    struct Transport final : juce::AudioPlayHead
+    {
+        double bpm = 120.0;
+        bool playing = false;
+        long samples = 0;
+
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo info;
+            const double ppq = (double) samples / sr * bpm / 60.0;
+            info.setIsPlaying (playing);
+            info.setBpm (bpm);
+            info.setTimeSignature (TimeSignature { 4, 4 });
+            info.setPpqPosition (ppq);
+            info.setPpqPositionOfLastBarStart (std::floor (ppq / 4.0) * 4.0);
+            info.setTimeInSamples ((int64_t) samples);
+            return info;
+        }
+    };
+
     struct Rig
     {
         SpectraProcessor proc;
         juce::MidiBuffer midi;
+        Transport transport;
         int inputs;
 
         explicit Rig (int numInputs) : inputs (numInputs)
         {
+            proc.setPlayHead (&transport);
             proc.setPlayConfigDetails (numInputs, 2, sr, block);
             proc.enableAllBuses();
             auto layout = proc.getBusesLayout();
@@ -51,6 +74,7 @@ namespace
                 for (int i = 0; i < n; ++i)
                     for (int ch = 0; ch < 2; ++ch)
                         buf.setSample (ch, i, ch < inputs ? gen (ch, t + i) : 0.0f);
+                transport.samples = t;
                 proc.processBlock (buf, midi);
                 for (int ch = 0; ch < 2; ++ch)
                     out.copyFrom (ch, pos, buf, ch, 0, n);
@@ -827,6 +851,84 @@ int main (int argc, char** argv)
             const auto label = names.getProgramName (i) + ": dB relative to Init";
             check (std::abs (diff) < 6.0, label.toRawUTF8(), diff);
         }
+    }
+
+    std::puts ("9. Re-freeze 1/4 at 120 bpm captures a new moment on every beat");
+    {
+        // The input changes pitch halfway between beats, so each beat line captures the pitch just before it.
+        auto pitchAt = [] (long n) { const long seg = (long) std::floor (((double) n / sr - 0.25) / 0.5); return seg < 0 || seg % 2 == 0 ? 300.0 : 500.0; };
+        auto gen = [&] (int, long n) { return sine (pitchAt (n), n); };
+        const int beat = (int) (0.5 * sr);
+
+        for (bool playing : { true, false })
+        {
+            Rig rig (2);
+            freezeSettings (rig.proc);
+            setParam (rig.proc, "refreeze", 3.0f);   // 1/4
+            rig.transport.playing = playing;
+            long t = 0;
+            rig.run (0.9, gen, t);
+            setParam (rig.proc, "freeze", 1.0f);     // first capture at 0.9 s (500 Hz)
+            auto out = rig.run (3.1, gen, t);        // beat lines at 1.0, 1.5, ... 3.5 s
+
+            int correct = 0, total = 0;
+            for (int b = 2; b <= 7; ++b)             // measure 150..450 ms after each beat line
+            {
+                const int start = b * beat - (int) (0.9 * sr) + (int) (0.15 * sr);
+                const double f = estimateFrequency (out.getReadPointer (0, start), (int) (0.3 * sr));
+                const double expected = pitchAt (playing ? (long) b * beat - 1 : (long) (0.9 * sr));
+                correct += std::abs (f - expected) < 3.0 ? 1 : 0;
+                ++total;
+            }
+            check (correct == total, playing ? "playing: each beat holds the pitch just before it"
+                                             : "stopped: no re-freeze, the first capture holds", correct);
+        }
+    }
+
+    std::puts ("10. Fast re-freeze with a long Release stays smooth");
+    {
+        Rig rig (2);
+        freezeSettings (rig.proc);
+        setParam (rig.proc, "attack", 60.0f);
+        setParam (rig.proc, "release", 5000.0f);   // much longer than a step: the cap has to apply
+        setParam (rig.proc, "refreeze", 4.0f);     // 1/8 at 120 bpm = 250 ms
+        rig.transport.playing = true;
+        long t = 0;
+        auto gen = [] (int, long n) { return sine (400.0, n); };
+        rig.run (1.0, gen, t);
+        setParam (rig.proc, "freeze", 1.0f);
+        auto out = rig.run (4.0, gen, t);
+        const int skip = (int) (1.0 * sr);
+        float maxStep = 0.0f;
+        for (int i = skip + 1; i < out.getNumSamples(); ++i)
+            maxStep = std::max (maxStep, std::abs (out.getSample (0, i) - out.getSample (0, i - 1)));
+        const float sineStep = 2.0f * juce::MathConstants<float>::pi * 400.0f / (float) sr * 0.5f * 2.0f;
+        check (maxStep < sineStep, "max sample step below 2x sine slope", maxStep);
+
+        // Short-window loudness shouldn't collapse when a fading capture is stolen.
+        double lo = 1e9, hi = 0.0;
+        const int win = 2048;
+        for (int i = skip; i + win <= out.getNumSamples(); i += win)
+        {
+            const double r = rms (out.getReadPointer (0, i), win);
+            lo = std::min (lo, r); hi = std::max (hi, r);
+        }
+        const double dipDb = 20.0 * std::log10 (hi / std::max (lo, 1e-9));
+        check (dipDb < 9.0, "loudness range across captures < 9 dB", dipDb);
+    }
+
+    std::puts ("11. Presets never save or load Re-freeze");
+    {
+        SpectraProcessor proc;
+        setParam (proc, "refreeze", 3.0f);
+        const int saved = proc.saveUserPreset ("Rhythm");
+        setParam (proc, "refreeze", 0.0f);
+        proc.setCurrentProgram (saved);
+        check (proc.apvts.getRawParameterValue ("refreeze")->load() < 0.5f, "user preset leaves re-freeze alone", 0);
+        setParam (proc, "refreeze", 2.0f);
+        proc.setCurrentProgram (1);
+        check (std::abs (proc.apvts.getRawParameterValue ("refreeze")->load() - 2.0f) < 0.01f, "factory preset leaves re-freeze alone", 0);
+        proc.deleteUserPreset (saved);
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASSED" : "FAILURES", failures, failures == 1 ? "" : "s");

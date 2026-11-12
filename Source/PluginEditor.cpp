@@ -215,8 +215,30 @@ BoundSlider::BoundSlider (juce::AudioProcessorValueTreeState& state, const juce:
     slider.getProperties().set ("bipolar", bipolar);
     slider.setTooltip (tooltip);
     attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (state, paramId, slider);
-    if (auto* param = state.getParameter (paramId))
+    param = state.getParameter (paramId);
+    if (param != nullptr)
         slider.setDoubleClickReturnValue (true, param->convertFrom0to1 (param->getDefaultValue()));
+}
+
+//==============================================================================
+namespace
+{
+    /** Shifts that stay in key over any chord: unisons, octaves, fifths, fourths. */
+    struct Interval { int semis; const char* name; const char* shortName; };
+    constexpr Interval pitchIntervals[] = {
+        { 24, "2 octaves", "2 oct" }, { 19, "octave + fifth", "oct+5th" }, { 17, "octave + fourth", "oct+4th" },
+        { 12, "octave", "octave" }, { 7, "fifth", "fifth" }, { 5, "fourth", "fourth" }, { 0, "unison", "unison" },
+        { -5, "fourth", "fourth" }, { -7, "fifth", "fifth" }, { -12, "octave", "octave" },
+        { -17, "octave + fourth", "oct+4th" }, { -19, "octave + fifth", "oct+5th" }, { -24, "2 octaves", "2 oct" },
+    };
+
+    /** Short name for the knob caption, or nullptr when the shift isn't one of the intervals. */
+    const char* intervalShortName (double semis)
+    {
+        for (const auto& i : pitchIntervals)
+            if (std::abs (semis - i.semis) < 0.005) return i.shortName;
+        return nullptr;
+    }
 }
 
 //==============================================================================
@@ -234,12 +256,52 @@ void Knob::resized()
     bound.slider.setBounds ((getWidth() - 60) / 2, 0, 60, 60);
 }
 
+void Knob::makePitchKnob()
+{
+    pitch = true;
+    bound.slider.snapStep = 1.0;
+    bound.slider.setMouseDragSensitivity (400);   // 48 semitones: about 8 px each
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    bound.slider.setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+void Knob::mouseUp (const juce::MouseEvent& e)
+{
+    if (! pitch || ! e.mouseWasClicked() || bound.param == nullptr) return;
+
+    const double current = bound.slider.getValue();
+    juce::PopupMenu menu;
+    menu.setLookAndFeel (&getLookAndFeel());
+    for (const auto& i : pitchIntervals)
+    {
+        const auto direction = i.semis > 0 ? " up" : i.semis < 0 ? " down" : "";
+        const auto amount = (i.semis > 0 ? "+" : "") + juce::String (i.semis);
+        menu.addItem (i.semis + 100, amount.paddedRight (' ', 5) + juce::String (i.name) + direction, true,
+                      std::abs (current - i.semis) < 0.005);
+    }
+
+    juce::Component::SafePointer<Knob> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMinimumWidth (180),
+                        [safe] (int result)
+                        {
+                            if (safe == nullptr || result == 0) return;
+                            auto* param = safe->bound.param;
+                            param->beginChangeGesture();
+                            param->setValueNotifyingHost (param->convertTo0to1 ((float) (result - 100)));
+                            param->endChangeGesture();
+                        });
+}
+
 void Knob::paint (juce::Graphics& g)
 {
     const bool active = bound.slider.isMouseOverOrDragging();
     g.setFont (mono (10.5f, 0.06f));
     g.setColour (colours::dim);
-    g.drawText (label, 0, 66, getWidth(), 14, juce::Justification::centred, false);
+    auto caption = label;
+    if (pitch)
+        if (const auto* name = intervalShortName (bound.slider.getValue()); name != nullptr && bound.slider.getValue() != 0.0)
+            caption << juce::String::fromUTF8 (" \xc2\xb7 ") << name;   // "shift · fifth"
+    g.drawText (caption, 0, 66, getWidth(), 14, juce::Justification::centred, false);
     g.setFont (mono (11.5f));
     g.setColour (active ? colours::gold : colours::text);
     g.drawText (bound.valueText(), 0, 82, getWidth(), 16, juce::Justification::centred, false);
@@ -308,6 +370,52 @@ void FreezeButton::paintButton (juce::Graphics& g, bool highlighted, bool)
     g.setFont (mono (12.5f, 0.2f));
     g.setColour (frozen ? colours::background : (highlighted ? colours::text : colours::dim));
     g.drawText (frozen ? "frozen" : "freeze", disc, juce::Justification::centred, false);
+}
+
+//==============================================================================
+RefreezeSelector::RefreezeSelector (juce::RangedAudioParameter& param)
+    : attachment (param, [this] (float v) { index = juce::roundToInt (v); repaint(); })
+{
+    setTooltip ("While frozen and the song is playing, capture a new moment on every bar or note.");
+    attachment.sendInitialUpdate();
+}
+
+void RefreezeSelector::mouseUp (const juce::MouseEvent& e)
+{
+    if (! e.mouseWasClicked()) return;
+
+    juce::PopupMenu menu;
+    menu.setLookAndFeel (&getLookAndFeel());
+    const auto choices = SpectraProcessor::refreezeChoices();
+    for (int i = 0; i < choices.size(); ++i)
+        menu.addItem (i + 1, i == 0 ? juce::String ("off") : "every " + choices[i], true, i == index);
+
+    juce::Component::SafePointer<RefreezeSelector> safe (this);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMinimumWidth (getWidth()),
+                        [safe] (int result)
+                        {
+                            if (safe != nullptr && result > 0)
+                                safe->attachment.setValueAsCompleteGesture ((float) (result - 1));
+                        });
+}
+
+void RefreezeSelector::paint (juce::Graphics& g)
+{
+    const bool hover = isMouseOver (false);
+    const auto choices = SpectraProcessor::refreezeChoices();
+    const auto value = juce::isPositiveAndBelow (index, choices.size()) ? choices[index] : juce::String ("off");
+    const auto label = juce::String ("re-freeze  ");
+
+    g.setFont (mono (11.0f, 0.06f));
+    const auto font = g.getCurrentFont();
+    const int labelW = juce::GlyphArrangement::getStringWidthInt (font, label);
+    const int valueW = juce::GlyphArrangement::getStringWidthInt (font, value);
+    auto r = getLocalBounds().withSizeKeepingCentre (labelW + valueW, getHeight());
+
+    g.setColour (hover ? colours::text : colours::dim);
+    g.drawText (label, r.removeFromLeft (labelW), juce::Justification::centredLeft, false);
+    g.setColour (index > 0 ? colours::gold : (hover ? colours::text : colours::dim));
+    g.drawText (value, r, juce::Justification::centredLeft, false);
 }
 
 //==============================================================================
@@ -866,12 +974,17 @@ void PresetNav::paint (juce::Graphics& g)
 
 //==============================================================================
 Content::Content (SpectraProcessor& proc, std::function<void (float)> scaleCallback)
-    : spectraProcessor (proc), onScaleChosen (std::move (scaleCallback)), presetNav (proc), screen (proc)
+    : spectraProcessor (proc), onScaleChosen (std::move (scaleCallback)), presetNav (proc), screen (proc),
+      refreeze (*proc.apvts.getParameter ("refreeze"))
 {
+    addAndMakeVisible (refreeze);
     auto& s = proc.apvts;
     knobs.push_back (std::make_unique<Knob> (s, "size",    "size",    "Length of the captured moment, up to 2 s."));
     knobs.push_back (std::make_unique<Knob> (s, "diffuse", "diffuse", "Tonal and pitched at 0, an airy wash at 100%."));
-    knobs.push_back (std::make_unique<Knob> (s, "shift",   "shift",   "Pitch in semitones. Hold Shift to drag finely.", true));
+    knobs.push_back (std::make_unique<Knob> (s, "shift",   "shift",
+                                             "Pitch in semitones, snapping to whole steps. Hold Shift to tune freely. "
+                                             "Click the value for octaves, fifths and fourths, which stay in key.", true));
+    knobs.back()->makePitchKnob();
     knobs.push_back (std::make_unique<Knob> (s, "mix",     "mix",     "How much the pad replaces the dry sound."));
     for (auto& k : knobs) addAndMakeVisible (*k);
 
@@ -918,7 +1031,8 @@ void Content::resized()
     screen.setBounds (28, 64, 540, 408);
 
     const int colX = 592, colW = baseWidth - 28 - colX;
-    freeze.setBounds (colX, 70, colW, 160);
+    freeze.setBounds (colX, 64, colW, 146);
+    refreeze.setBounds (colX, 212, colW, 22);
     const int cellW = colW / 2, cellH = 108;
     for (size_t i = 0; i < knobs.size(); ++i)
         knobs[i]->setBounds (colX + (int) (i % 2) * cellW, 252 + (int) (i / 2) * (cellH + 6), cellW, cellH);

@@ -56,9 +56,20 @@ public:
 
     static juce::StringArray textureParamIds();
 
+    /** Choices of the "refreeze" parameter, in order. Index 0 is off. */
+    static juce::StringArray refreezeChoices() { return { "off", "1 bar", "1/2", "1/4", "1/8" }; }
+
+    /** Freeze and Re-freeze are performance controls: presets never save or change them. */
+    static bool isPerformanceParam (const juce::String& id) { return id == "freeze" || id == "refreeze"; }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void setParam (const juce::String& id, double plainValue);
+
+    struct Trigger { int sample; float releaseCapMs; };
+    /** Finds the re-freeze grid lines inside this block. Returns how many were written to `out`. */
+    int findRefreezeTriggers (int numSamples, Trigger* out, int maxTriggers);
+    double lastTriggerPpq = -1.0e9;   // audio thread only
 
     spectra::SpectralEngine engine;
     juce::AudioBuffer<float> wetBuffer;
@@ -75,6 +86,7 @@ private:
     struct ParamPointers
     {
         std::atomic<float>* freeze = nullptr;
+        std::atomic<float>* refreeze = nullptr;
         std::atomic<float>* size = nullptr;
         std::atomic<float>* scan = nullptr;
         std::atomic<float>* drift = nullptr;
