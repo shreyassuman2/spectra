@@ -2,7 +2,7 @@
 
 Each release's notes on GitHub are taken from its section here.
 
-## Unreleased
+## 1.1.0
 
 - **Re-freeze in time with your song.** Under the freeze button, set *re-freeze* to every bar, 1/2, 1/4 or 1/8. While Spectra is frozen and the song is playing, it captures a new moment on each one, so the pad follows the music without drawing automation. When the song is stopped, the freeze holds as before. Presets never change this setting.
 - **Easier pitch shifting.** The shift knob now snaps to whole semitones, so 0 and +12 are easy to hit. Hold Shift to tune freely. Click the value for a menu of octaves, fifths and fourths, which stay in key over any chord, and the knob names the interval when you land on one.
